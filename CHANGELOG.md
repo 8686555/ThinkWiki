@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.0.1
+### Fixed
+- Fixed GitHub Actions regression tests so spawned test scripts now prefer the repository runtime in `.venv` after `bootstrap`, instead of falling back to the system Python.
+- Fixed CI failures in `ingest.py` regression coverage caused by running document and directory ingest tests outside the bootstrapped ThinkWiki runtime.
+
 ## v1.0.0
 ### Released as ThinkWiki
 - First standalone release under the `ThinkWiki` brand.
