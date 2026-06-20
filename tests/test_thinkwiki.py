@@ -357,16 +357,21 @@ class ThinkWikiRegressionTest(unittest.TestCase):
 
             hub_html = (root / "output" / "index.html").read_text(encoding="utf-8")
             self.assertIn("Demo Knowledge Base", hub_html)
-            self.assertIn("成果入口页", hub_html)
+            self.assertIn("知识工作台首页", hub_html)
             self.assertIn(">2</strong><span>页面数</span>", hub_html)
             self.assertIn(">3</strong><span>图节点</span>", hub_html)
             self.assertIn(">3</strong><span>图关系</span>", hub_html)
-            self.assertIn("最近更新", hub_html)
-            self.assertIn("代表页面", hub_html)
+            self.assertIn("What Changed", hub_html)
+            self.assertIn("Next Actions", hub_html)
+            self.assertIn("Needs Attention", hub_html)
+            self.assertIn("Graph Snapshot", hub_html)
+            self.assertIn("Featured Pages", hub_html)
+            self.assertIn("Outputs Overview", hub_html)
             self.assertIn("从这里开始", hub_html)
             self.assertIn("Alpha Source", hub_html)
             self.assertIn("Beta Topic", hub_html)
             self.assertIn("viewer/index.html#page=wiki/topics/beta.md", hub_html)
+            self.assertIn("当前最关键的页面是", hub_html)
 
     def test_directory_ingest_updates_topic_sources(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

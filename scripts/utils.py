@@ -209,6 +209,156 @@ def _render_page_list(items: list[dict], empty_text: str) -> str:
     return "\n".join(cards)
 
 
+def _render_bullet_list(items: list[str], empty_text: str) -> str:
+    if not items:
+        return "<div class='empty small'>{}</div>".format(escape(empty_text))
+    rows = [
+        "<li>{}</li>".format(item)
+        for item in items
+    ]
+    return "<ul class='bullet-list'>{}</ul>".format("".join(rows))
+
+
+def _render_action_cards(items: list[dict], empty_text: str) -> str:
+    if not items:
+        return "<div class='empty small'>{}</div>".format(escape(empty_text))
+    cards: list[str] = []
+    for item in items:
+        href = str(item.get("href", "") or "")
+        title = str(item.get("title", "Untitled"))
+        summary = str(item.get("summary", "") or "")
+        label = str(item.get("label", "") or "")
+        target_attrs = " target='_blank' rel='noopener'" if href else ""
+        tag_html = "<span class='action-tag'>{}</span>".format(escape(label)) if label else ""
+        cards.append(
+            "<a class='action-card' href='{href}'{target_attrs}>"
+            "{tag_html}"
+            "<strong>{title}</strong>"
+            "<span>{summary}</span>"
+            "</a>".format(
+                href=escape(href or "#", quote=True),
+                target_attrs=target_attrs,
+                tag_html=tag_html,
+                title=escape(title),
+                summary=escape(summary),
+            )
+        )
+    return "\n".join(cards)
+
+
+def _recent_pages(pages: list[dict], limit: int = 4) -> list[dict]:
+    return sorted(pages, key=_page_sort_key, reverse=True)[:limit]
+
+
+def _generated_pages(pages: list[dict], limit: int = 4) -> list[dict]:
+    generated = [
+        page
+        for page in pages
+        if str(page.get("type", "")) in {"concept", "decision", "synthesis", "query"}
+    ]
+    return sorted(generated, key=_page_sort_key, reverse=True)[:limit]
+
+
+def _featured_pages(pages: list[dict], limit: int = 4) -> list[dict]:
+    featured = [
+        page
+        for page in pages
+        if str(page.get("type", "")) in {"concept", "decision", "synthesis", "source"}
+    ]
+    return sorted(featured, key=_page_sort_key, reverse=True)[:limit]
+
+
+def _attention_items(pages: list[dict], graph_insights: dict) -> list[str]:
+    items: list[str] = []
+    isolated_nodes = graph_insights.get("isolatedNodes", []) if isinstance(graph_insights, dict) else []
+    weak_pages = [item for item in isolated_nodes if str(item.get("severity", "")) == "weak"]
+    isolated_pages = [item for item in isolated_nodes if str(item.get("severity", "")) == "isolated"]
+    if isolated_pages:
+        items.append("当前有 <strong>{}</strong> 个孤立页面，建议优先补链接或补来源。".format(len(isolated_pages)))
+    if weak_pages:
+        items.append("当前有 <strong>{}</strong> 个弱连接页面，适合继续整理上下文。".format(len(weak_pages)))
+
+    missing_summary = [
+        page for page in pages
+        if str(page.get("summary", "") or "").strip() in {"", "(no summary)", "(no summary yet)"}
+    ]
+    if missing_summary:
+        items.append("有 <strong>{}</strong> 个页面还没有可靠摘要。".format(len(missing_summary)))
+
+    missing_sources = [
+        page for page in pages
+        if not isinstance(page.get("sources"), list) or not list(page.get("sources") or [])
+    ]
+    if missing_sources:
+        items.append("有 <strong>{}</strong> 个页面缺少来源信息。".format(len(missing_sources)))
+
+    return items[:4]
+
+
+def _recommended_actions(
+    *,
+    root: Path,
+    viewer_exists: bool,
+    graph_exists: bool,
+    graph_insights: dict,
+    recent_pages: list[dict],
+) -> list[dict]:
+    actions: list[dict] = []
+    if viewer_exists:
+        actions.append({
+            "label": "Read",
+            "title": "打开本地浏览页",
+            "summary": "按页面类型、状态和置信度快速浏览整个 wiki。",
+            "href": "viewer/index.html",
+        })
+    if graph_exists:
+        summary = "进入图谱页，查看关键页面、桥接页面和建议补链。"
+        actions.append({
+            "label": "Explore",
+            "title": "打开知识图谱",
+            "summary": summary,
+            "href": "graph/index.html",
+        })
+
+    stats = graph_insights.get("stats", {}) if isinstance(graph_insights, dict) else {}
+    isolated_count = int(stats.get("isolatedCount", 0) or 0)
+    if graph_exists and isolated_count:
+        actions.append({
+            "label": "Fix",
+            "title": "处理孤立页面",
+            "summary": "当前有 {} 个孤立页面，建议先在图谱中检查并补链。".format(isolated_count),
+            "href": "graph/index.html",
+        })
+
+    suggested_links = graph_insights.get("suggestedLinks", []) if isinstance(graph_insights, dict) else []
+    if graph_exists and suggested_links:
+        actions.append({
+            "label": "Link",
+            "title": "检查建议补链",
+            "summary": "图谱已识别 {} 条高置信度建议补链。".format(len(suggested_links)),
+            "href": "graph/index.html",
+        })
+
+    if recent_pages:
+        page_id = str(recent_pages[0].get("id", "") or "")
+        if page_id:
+            actions.append({
+                "label": "Latest",
+                "title": "查看最近更新页面",
+                "summary": "从最近更新的页面继续阅读或整理。",
+                "href": "viewer/index.html#page={}".format(escape(page_id, quote=True)),
+            })
+
+    if not actions:
+        actions.append({
+            "label": "Build",
+            "title": "生成浏览页和图谱页",
+            "summary": "先运行 viewer 和 graph，让首页可以展示完整工作台内容。",
+            "href": "",
+        })
+    return actions[:4]
+
+
 def write_output_home(root: Path) -> Path:
     output_dir = root / "output"
     viewer_path = output_dir / "viewer" / "index.html"
@@ -220,24 +370,25 @@ def write_output_home(root: Path) -> Path:
     page_count = int(viewer_data.get("pageCount", 0) or 0)
     node_count = len(graph_data.get("nodes", [])) if isinstance(graph_data.get("nodes"), list) else 0
     edge_count = len(graph_data.get("edges", [])) if isinstance(graph_data.get("edges"), list) else 0
+    graph_insights = graph_data.get("insights", {}) if isinstance(graph_data.get("insights"), dict) else {}
     ready_outputs = int(viewer_path.exists()) + int(graph_path.exists())
     pages = viewer_data.get("pages", []) if isinstance(viewer_data.get("pages"), list) else []
-    recent_pages = sorted(pages, key=_page_sort_key, reverse=True)[:3]
-    featured_pages = [
-        page
-        for page in pages
-        if str(page.get("type", "")) in {"concept", "decision"}
-    ]
-    featured_pages = sorted(featured_pages, key=_page_sort_key, reverse=True)[:3]
-    items: list[str] = []
+    recent_pages = _recent_pages(pages)
+    generated_pages = _generated_pages(pages)
+    featured_pages = _featured_pages(pages)
+    attention_items = _attention_items(pages, graph_insights)
+    graph_summary = str(graph_insights.get("summary", "") or "").strip()
+    graph_stats = graph_insights.get("stats", {}) if isinstance(graph_insights, dict) else {}
+    key_pages = graph_insights.get("topNodes", []) if isinstance(graph_insights.get("topNodes"), list) else []
+    output_items: list[str] = []
     for title, path, summary in [
         ("本地浏览页", viewer_path, "按页面类型、置信度和状态浏览整个 wiki"),
-        ("知识图谱", graph_path, "查看页面之间的引用、包含和链接关系"),
+        ("知识图谱", graph_path, "查看页面之间的引用、包含、关键页面和建议补链"),
     ]:
         if not path.exists():
             continue
         relative = path.relative_to(output_dir).as_posix()
-        items.append(
+        output_items.append(
             "<a class='card' href='{href}' target='_blank' rel='noopener'>"
             "<strong>{title}</strong>"
             "<span>{summary}</span>"
@@ -249,8 +400,8 @@ def write_output_home(root: Path) -> Path:
                 path=escape(relative),
             )
         )
-    if not items:
-        items.append("<div class='empty'>还没有可浏览的成果页。先运行 viewer 或 graph 命令。</div>")
+    if not output_items:
+        output_items.append("<div class='empty'>还没有可浏览的成果页。先运行 viewer 或 graph 命令。</div>")
 
     stats: list[str] = []
     for label, value in [
@@ -266,7 +417,37 @@ def write_output_home(root: Path) -> Path:
             )
         )
     recent_pages_html = _render_page_list(recent_pages, "还没有可推荐的最近页面。先运行 viewer 生成浏览成果页。")
-    featured_pages_html = _render_page_list(featured_pages, "还没有代表性概念或决策页面。")
+    generated_pages_html = _render_page_list(generated_pages, "还没有最近生成的 query / synthesis / decision / concept 页面。")
+    featured_pages_html = _render_page_list(featured_pages, "还没有代表性页面。")
+    attention_html = _render_bullet_list(attention_items, "当前没有明显需要优先处理的问题。")
+    actions_html = _render_action_cards(
+        _recommended_actions(
+            root=root,
+            viewer_exists=viewer_path.exists(),
+            graph_exists=graph_path.exists(),
+            graph_insights=graph_insights,
+            recent_pages=recent_pages,
+        ),
+        "当前还没有可推荐的下一步动作。",
+    )
+    graph_snapshot_items: list[str] = []
+    if graph_summary:
+        graph_snapshot_items.append("<div class='snapshot-copy'>{}</div>".format(escape(graph_summary)))
+    if key_pages:
+        graph_snapshot_items.append(
+            "<div class='snapshot-chip'>当前关键页面: <strong>{}</strong></div>".format(
+                escape(str(key_pages[0].get("title", "") or "n/a"))
+            )
+        )
+    suggested_count = len(graph_insights.get("suggestedLinks", [])) if isinstance(graph_insights.get("suggestedLinks"), list) else 0
+    graph_snapshot_items.append(
+        "<div class='snapshot-chip'>孤立页面 {isolated} 个</div>"
+        "<div class='snapshot-chip'>建议补链 {links} 条</div>".format(
+            isolated=escape(str(int(graph_stats.get("isolatedCount", 0) or 0))),
+            links=escape(str(suggested_count)),
+        )
+    )
+    graph_snapshot_html = "\n".join(graph_snapshot_items) if graph_snapshot_items else "<div class='empty small'>图谱洞察将在生成 graph 后显示。</div>"
 
     html = """<!DOCTYPE html>
 <html lang="zh-CN">
@@ -364,6 +545,12 @@ def write_output_home(root: Path) -> Path:
     .grid {{
       display: grid;
       gap: 14px;
+    }}
+    .workspace-grid {{
+      display: grid;
+      gap: 14px;
+      grid-template-columns: 1.1fr 0.9fr;
+      margin-top: 18px;
     }}
     .section-grid {{
       display: grid;
@@ -477,9 +664,73 @@ def write_output_home(root: Path) -> Path:
       color: var(--muted);
       line-height: 1.55;
     }}
+    .bullet-list {{
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+      display: grid;
+      gap: 10px;
+      line-height: 1.5;
+    }}
+    .bullet-list strong {{
+      color: var(--text);
+    }}
+    .actions {{
+      display: grid;
+      gap: 10px;
+    }}
+    .action-card {{
+      display: block;
+      text-decoration: none;
+      color: inherit;
+      border: 1px solid var(--border);
+      background: rgba(18, 25, 53, 0.85);
+      border-radius: 16px;
+      padding: 14px;
+    }}
+    .action-card:hover {{
+      border-color: rgba(138,180,255,0.55);
+    }}
+    .action-card strong {{
+      display: block;
+      margin: 6px 0;
+    }}
+    .action-card span {{
+      color: var(--muted);
+      line-height: 1.45;
+      display: block;
+    }}
+    .action-tag {{
+      display: inline-block;
+      font-size: 0.8rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }}
+    .snapshot {{
+      display: grid;
+      gap: 10px;
+    }}
+    .snapshot-copy {{
+      color: var(--muted);
+      line-height: 1.55;
+    }}
+    .snapshot-chip {{
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: rgba(255,255,255,0.03);
+      padding: 12px 14px;
+      color: var(--muted);
+    }}
+    .snapshot-chip strong {{
+      color: var(--text);
+    }}
     @media (max-width: 720px) {{
       .stats {{
         grid-template-columns: repeat(2, minmax(0, 1fr));
+      }}
+      .workspace-grid {{
+        grid-template-columns: 1fr;
       }}
       .section-grid {{
         grid-template-columns: 1fr;
@@ -490,37 +741,66 @@ def write_output_home(root: Path) -> Path:
 <body>
   <main class="shell">
     <section class="hero">
-      <div class="eyebrow">Output Hub</div>
+      <div class="eyebrow">Knowledge Workspace</div>
       <div class="hero-title">
         <h1>{wiki_title}</h1>
         <div class="meta">
-          <span class="badge">成果入口页</span>
+          <span class="badge">知识工作台首页</span>
           <span class="badge">生成日期 {generated_at}</span>
         </div>
       </div>
-      <p class="lead">这里汇总当前知识库最容易直接打开的成果页。你可以从这里进入本地浏览页或知识图谱，也能快速确认当前 wiki 的页面规模和图谱状态。</p>
+      <p class="lead">这里不只是成果入口页，而是当前 wiki 的工作台首页。你可以先看最近发生了什么、哪些页面值得继续整理，再决定进入浏览页还是图谱页。</p>
       <div class="stats">
         {stats}
       </div>
     </section>
-    <div class="grid">
-      {items}
+    <div class="workspace-grid">
+      <section class="panel">
+        <h2>What Changed</h2>
+        <p>这里汇总最近更新和最近生成的页面，帮助你快速判断这次整理后 wiki 发生了什么变化。</p>
+        {recent_pages}
+        <div style="height: 12px;"></div>
+        {generated_pages}
+      </section>
+      <section class="panel">
+        <h2>Next Actions</h2>
+        <p>从这里直接进入最值得继续操作的下一步，而不是手动判断应该先看哪里。</p>
+        <div class="actions">
+          {actions}
+        </div>
+      </section>
+    </div>
+    <div class="workspace-grid">
+      <section class="panel">
+        <h2>Needs Attention</h2>
+        <p>优先显示当前知识库里还比较薄弱的地方，例如孤立页面、弱连接页面、缺摘要或缺来源的页面。</p>
+        {attention}
+      </section>
+      <section class="panel">
+        <h2>Graph Snapshot</h2>
+        <p>直接读取知识图谱的结构洞察，让首页先告诉你现在图里最值得关注的地方。</p>
+        <div class="snapshot">
+          {graph_snapshot}
+        </div>
+      </section>
     </div>
     <div class="section-grid">
       <section class="panel">
-        <h2>最近更新</h2>
-        <p>优先从这些页面继续浏览，通常最能代表当前 wiki 的最新整理结果。</p>
-        {recent_pages}
+        <h2>Featured Pages</h2>
+        <p>优先展示 concept、decision、synthesis 和 source，帮助你快速抓到这个知识库最有价值的沉淀。</p>
+        {featured_pages}
       </section>
       <section class="panel">
-        <h2>代表页面</h2>
-        <p>优先展示概念页和决策页，帮助你快速理解这个知识库沉淀出的关键结论。</p>
-        {featured_pages}
+        <h2>Outputs Overview</h2>
+        <p>浏览页和图谱页仍然是最重要的两个成果入口，但现在它们被纳入统一工作台视图。</p>
+        <div class="grid">
+          {items}
+        </div>
       </section>
     </div>
     <div class="guide">
       <strong>从这里开始</strong>
-      <span>先打开本地浏览页阅读页面，再进入知识图谱查看关系。如果你刚导入了新资料，建议重新运行 viewer 和 graph 以刷新成果页。</span>
+      <span>先看 `What Changed` 和 `Needs Attention`，再决定进入浏览页或图谱页。如果你刚导入了新资料，建议重新运行 viewer 和 graph 以刷新工作台首页。</span>
     </div>
   </main>
 </body>
@@ -529,8 +809,12 @@ def write_output_home(root: Path) -> Path:
         wiki_title=escape(wiki_title),
         generated_at=escape(generated_at),
         stats="\n".join(stats),
-        items="\n".join(items),
+        items="\n".join(output_items),
         recent_pages=recent_pages_html,
+        generated_pages=generated_pages_html,
+        actions=actions_html,
+        attention=attention_html,
+        graph_snapshot=graph_snapshot_html,
         featured_pages=featured_pages_html,
     )
     target = output_dir / "index.html"

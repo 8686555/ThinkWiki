@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+### Added
+- Added a workspace-style `output/index.html` home that surfaces `What Changed`, `Next Actions`, `Needs Attention`, `Graph Snapshot`, and `Featured Pages`.
+- Added homepage recommendations that reuse graph insight data so users can move from the output hub into the right next action faster.
+
 ## v1.1.0
 ### Added
 - Added `Graph Insights` to `output/graph/index.html` so the graph page now surfaces key pages, bridge pages, weakly connected pages, and suggested links.

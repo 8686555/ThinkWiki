@@ -95,6 +95,12 @@
       display: grid;
       gap: 14px;
     }
+    .workspace-grid {
+      display: grid;
+      gap: 14px;
+      grid-template-columns: 1.1fr 0.9fr;
+      margin-top: 18px;
+    }
     .section-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -207,9 +213,73 @@
       color: var(--muted);
       line-height: 1.55;
     }
+    .bullet-list {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+      display: grid;
+      gap: 10px;
+      line-height: 1.5;
+    }
+    .bullet-list strong {
+      color: var(--text);
+    }
+    .actions {
+      display: grid;
+      gap: 10px;
+    }
+    .action-card {
+      display: block;
+      text-decoration: none;
+      color: inherit;
+      border: 1px solid var(--border);
+      background: rgba(18, 25, 53, 0.85);
+      border-radius: 16px;
+      padding: 14px;
+    }
+    .action-card:hover {
+      border-color: rgba(138,180,255,0.55);
+    }
+    .action-card strong {
+      display: block;
+      margin: 6px 0;
+    }
+    .action-card span {
+      color: var(--muted);
+      line-height: 1.45;
+      display: block;
+    }
+    .action-tag {
+      display: inline-block;
+      font-size: 0.8rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+    .snapshot {
+      display: grid;
+      gap: 10px;
+    }
+    .snapshot-copy {
+      color: var(--muted);
+      line-height: 1.55;
+    }
+    .snapshot-chip {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: rgba(255,255,255,0.03);
+      padding: 12px 14px;
+      color: var(--muted);
+    }
+    .snapshot-chip strong {
+      color: var(--text);
+    }
     @media (max-width: 720px) {
       .stats {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .workspace-grid {
+        grid-template-columns: 1fr;
       }
       .section-grid {
         grid-template-columns: 1fr;
@@ -220,15 +290,15 @@
 <body>
   <main class="shell">
     <section class="hero">
-      <div class="eyebrow">Output Hub</div>
+      <div class="eyebrow">Knowledge Workspace</div>
       <div class="hero-title">
         <h1>ThinkWiki Demo Wiki</h1>
         <div class="meta">
-          <span class="badge">成果入口页</span>
+          <span class="badge">知识工作台首页</span>
           <span class="badge">生成日期 2026-06-20</span>
         </div>
       </div>
-      <p class="lead">这里汇总当前知识库最容易直接打开的成果页。你可以从这里进入本地浏览页或知识图谱，也能快速确认当前 wiki 的页面规模和图谱状态。</p>
+      <p class="lead">这里不只是成果入口页，而是当前 wiki 的工作台首页。你可以先看最近发生了什么、哪些页面值得继续整理，再决定进入浏览页还是图谱页。</p>
       <div class="stats">
         <div class='stat'><strong>2</strong><span>成果页</span></div>
 <div class='stat'><strong>11</strong><span>页面数</span></div>
@@ -236,29 +306,68 @@
 <div class='stat'><strong>44</strong><span>图关系</span></div>
       </div>
     </section>
-    <div class="grid">
-      <a class='card' href='viewer/index.html' target='_blank' rel='noopener'><strong>本地浏览页</strong><span>按页面类型、置信度和状态浏览整个 wiki</span><code>viewer/index.html</code></a>
-<a class='card' href='graph/index.html' target='_blank' rel='noopener'><strong>知识图谱</strong><span>查看页面之间的引用、包含和链接关系</span><code>graph/index.html</code></a>
-    </div>
-    <div class="section-grid">
+    <div class="workspace-grid">
       <section class="panel">
-        <h2>最近更新</h2>
-        <p>优先从这些页面继续浏览，通常最能代表当前 wiki 的最新整理结果。</p>
+        <h2>What Changed</h2>
+        <p>这里汇总最近更新和最近生成的页面，帮助你快速判断这次整理后 wiki 发生了什么变化。</p>
         <a class='mini-card' href='viewer/index.html#page=wiki/queries/what-makes-ai-native-team.md' target='_blank' rel='noopener'><div class='mini-meta'><span class='mini-type'>query</span><span>2026-06-19</span></div><strong>What Makes an AI Native Team</strong><span>Saved query summarizing the defining traits of an AI native delivery team.</span></a>
 <a class='mini-card' href='viewer/index.html#page=wiki/sources/review-checklist.md' target='_blank' rel='noopener'><div class='mini-meta'><span class='mini-type'>source</span><span>2026-06-19</span></div><strong>Review Checklist</strong><span>A source page explaining how human review, acceptance criteria, and escalation paths fit together.</span></a>
 <a class='mini-card' href='viewer/index.html#page=wiki/sources/platform-spec.md' target='_blank' rel='noopener'><div class='mini-meta'><span class='mini-type'>source</span><span>2026-06-19</span></div><strong>Platform Spec</strong><span>A source page describing why execution specs and context must be treated as one delivery system.</span></a>
+<a class='mini-card' href='viewer/index.html#page=wiki/topics/model-platform.md' target='_blank' rel='noopener'><div class='mini-meta'><span class='mini-type'>topic</span><span>2026-06-19</span></div><strong>Model Platform</strong><span>Topic page for reusable context, evaluation workflows, and internal tooling.</span></a>
+        <div style="height: 12px;"></div>
+        <a class='mini-card' href='viewer/index.html#page=wiki/queries/what-makes-ai-native-team.md' target='_blank' rel='noopener'><div class='mini-meta'><span class='mini-type'>query</span><span>2026-06-19</span></div><strong>What Makes an AI Native Team</strong><span>Saved query summarizing the defining traits of an AI native delivery team.</span></a>
+<a class='mini-card' href='viewer/index.html#page=wiki/concepts/execution-spec.md' target='_blank' rel='noopener'><div class='mini-meta'><span class='mini-type'>concept</span><span>2026-06-19</span></div><strong>Execution Spec</strong><span>A reusable specification that binds task framing, context, policy, and review expectations together.</span></a>
+<a class='mini-card' href='viewer/index.html#page=wiki/decisions/execution-policy.md' target='_blank' rel='noopener'><div class='mini-meta'><span class='mini-type'>decision</span><span>2026-06-19</span></div><strong>Execution Policy</strong><span>Decision page that recommends treating context and execution as first-class platform capabilities.</span></a>
+<a class='mini-card' href='viewer/index.html#page=wiki/syntheses/delivery-system.md' target='_blank' rel='noopener'><div class='mini-meta'><span class='mini-type'>synthesis</span><span>2026-06-19</span></div><strong>Delivery System Synthesis</strong><span>Synthesis page summarizing how source, topic, concept, and decision pages reinforce one another.</span></a>
       </section>
       <section class="panel">
-        <h2>代表页面</h2>
-        <p>优先展示概念页和决策页，帮助你快速理解这个知识库沉淀出的关键结论。</p>
-        <a class='mini-card' href='viewer/index.html#page=wiki/concepts/execution-spec.md' target='_blank' rel='noopener'><div class='mini-meta'><span class='mini-type'>concept</span><span>2026-06-19</span></div><strong>Execution Spec</strong><span>A reusable specification that binds task framing, context, policy, and review expectations together.</span></a>
+        <h2>Next Actions</h2>
+        <p>从这里直接进入最值得继续操作的下一步，而不是手动判断应该先看哪里。</p>
+        <div class="actions">
+          <a class='action-card' href='viewer/index.html' target='_blank' rel='noopener'><span class='action-tag'>Read</span><strong>打开本地浏览页</strong><span>按页面类型、状态和置信度快速浏览整个 wiki。</span></a>
+<a class='action-card' href='graph/index.html' target='_blank' rel='noopener'><span class='action-tag'>Explore</span><strong>打开知识图谱</strong><span>进入图谱页，查看关键页面、桥接页面和建议补链。</span></a>
+<a class='action-card' href='graph/index.html' target='_blank' rel='noopener'><span class='action-tag'>Link</span><strong>检查建议补链</strong><span>图谱已识别 8 条高置信度建议补链。</span></a>
+<a class='action-card' href='viewer/index.html#page=wiki/queries/what-makes-ai-native-team.md' target='_blank' rel='noopener'><span class='action-tag'>Latest</span><strong>查看最近更新页面</strong><span>从最近更新的页面继续阅读或整理。</span></a>
+        </div>
+      </section>
+    </div>
+    <div class="workspace-grid">
+      <section class="panel">
+        <h2>Needs Attention</h2>
+        <p>优先显示当前知识库里还比较薄弱的地方，例如孤立页面、弱连接页面、缺摘要或缺来源的页面。</p>
+        <ul class='bullet-list'><li>当前有 <strong>3</strong> 个弱连接页面，适合继续整理上下文。</li></ul>
+      </section>
+      <section class="panel">
+        <h2>Graph Snapshot</h2>
+        <p>直接读取知识图谱的结构洞察，让首页先告诉你现在图里最值得关注的地方。</p>
+        <div class="snapshot">
+          <div class='snapshot-copy'>当前最关键的页面是 AI Native Team。 有 3 个弱连接页面值得继续整理。 当前可优先检查 8 条建议补链。</div>
+<div class='snapshot-chip'>当前关键页面: <strong>AI Native Team</strong></div>
+<div class='snapshot-chip'>孤立页面 0 个</div><div class='snapshot-chip'>建议补链 8 条</div>
+        </div>
+      </section>
+    </div>
+    <div class="section-grid">
+      <section class="panel">
+        <h2>Featured Pages</h2>
+        <p>优先展示 concept、decision、synthesis 和 source，帮助你快速抓到这个知识库最有价值的沉淀。</p>
+        <a class='mini-card' href='viewer/index.html#page=wiki/sources/review-checklist.md' target='_blank' rel='noopener'><div class='mini-meta'><span class='mini-type'>source</span><span>2026-06-19</span></div><strong>Review Checklist</strong><span>A source page explaining how human review, acceptance criteria, and escalation paths fit together.</span></a>
+<a class='mini-card' href='viewer/index.html#page=wiki/sources/platform-spec.md' target='_blank' rel='noopener'><div class='mini-meta'><span class='mini-type'>source</span><span>2026-06-19</span></div><strong>Platform Spec</strong><span>A source page describing why execution specs and context must be treated as one delivery system.</span></a>
+<a class='mini-card' href='viewer/index.html#page=wiki/concepts/execution-spec.md' target='_blank' rel='noopener'><div class='mini-meta'><span class='mini-type'>concept</span><span>2026-06-19</span></div><strong>Execution Spec</strong><span>A reusable specification that binds task framing, context, policy, and review expectations together.</span></a>
 <a class='mini-card' href='viewer/index.html#page=wiki/decisions/execution-policy.md' target='_blank' rel='noopener'><div class='mini-meta'><span class='mini-type'>decision</span><span>2026-06-19</span></div><strong>Execution Policy</strong><span>Decision page that recommends treating context and execution as first-class platform capabilities.</span></a>
-<a class='mini-card' href='viewer/index.html#page=wiki/decisions/context-budget.md' target='_blank' rel='noopener'><div class='mini-meta'><span class='mini-type'>decision</span><span>2026-06-19</span></div><strong>Context Budget</strong><span>Decision page that limits context sprawl and requires explicit budget ownership in prompts and tools.</span></a>
+      </section>
+      <section class="panel">
+        <h2>Outputs Overview</h2>
+        <p>浏览页和图谱页仍然是最重要的两个成果入口，但现在它们被纳入统一工作台视图。</p>
+        <div class="grid">
+          <a class='card' href='viewer/index.html' target='_blank' rel='noopener'><strong>本地浏览页</strong><span>按页面类型、置信度和状态浏览整个 wiki</span><code>viewer/index.html</code></a>
+<a class='card' href='graph/index.html' target='_blank' rel='noopener'><strong>知识图谱</strong><span>查看页面之间的引用、包含、关键页面和建议补链</span><code>graph/index.html</code></a>
+        </div>
       </section>
     </div>
     <div class="guide">
       <strong>从这里开始</strong>
-      <span>先打开本地浏览页阅读页面，再进入知识图谱查看关系。如果你刚导入了新资料，建议重新运行 viewer 和 graph 以刷新成果页。</span>
+      <span>先看 `What Changed` 和 `Needs Attention`，再决定进入浏览页或图谱页。如果你刚导入了新资料，建议重新运行 viewer 和 graph 以刷新工作台首页。</span>
     </div>
   </main>
 </body>
