@@ -182,9 +182,117 @@ class ThinkWikiRegressionTest(unittest.TestCase):
             self.assertIn('data-focus-type="concept"', html_text)
             self.assertIn("edgeStatsForNode", html_text)
             self.assertIn("Relation Stats", html_text)
+            self.assertIn("Graph Insights", html_text)
+            self.assertIn("Key Pages", html_text)
+            self.assertIn("Bridge Pages", html_text)
+            self.assertIn("Suggested Links", html_text)
+            self.assertIn("suggestionKey", html_text)
+            self.assertIn("renderInsights", html_text)
             self.assertIn("stroke-dasharray", html_text)
             self.assertTrue((root / "output" / "index.html").exists())
             self.assertIn("output/graph/index.html", (root / "log.md").read_text(encoding="utf-8"))
+
+    def test_graph_insights_identify_key_pages_and_link_suggestions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir) / "wiki"
+            write_text(root / ".wiki-schema.md", "# marker")
+            (root / "wiki" / "sources").mkdir(parents=True, exist_ok=True)
+            (root / "wiki" / "topics").mkdir(parents=True, exist_ok=True)
+            (root / "wiki" / "concepts").mkdir(parents=True, exist_ok=True)
+            (root / "wiki" / "queries").mkdir(parents=True, exist_ok=True)
+
+            write_text(
+                root / "wiki" / "sources" / "platform-spec.md",
+                """
+                ---
+                title: Platform Spec
+                type: source
+                created: 2026-06-19
+                updated: 2026-06-19
+                summary: Platform foundation and terminology.
+                sources:
+                  - raw/articles/platform.pdf
+                confidence: extracted
+                status: active
+                ---
+
+                # Platform Spec
+                """,
+            )
+            write_text(
+                root / "wiki" / "topics" / "platform.md",
+                """
+                ---
+                title: Platform
+                type: topic
+                created: 2026-06-19
+                updated: 2026-06-19
+                summary: Platform topic overview.
+                sources:
+                  - wiki/sources/platform-spec.md
+                confidence: mixed
+                status: active
+                ---
+
+                # Platform
+
+                - [Platform Spec](../sources/platform-spec.md)
+                """,
+            )
+            write_text(
+                root / "wiki" / "concepts" / "platform-principles.md",
+                """
+                ---
+                title: Platform Principles
+                type: concept
+                created: 2026-06-19
+                updated: 2026-06-19
+                summary: Platform principles for the current wiki.
+                sources:
+                  - wiki/sources/platform-spec.md
+                confidence: inferred
+                status: active
+                ---
+
+                # Platform Principles
+                """,
+            )
+            write_text(
+                root / "wiki" / "queries" / "orphan-question.md",
+                """
+                ---
+                title: Orphan Question
+                type: query
+                created: 2026-06-19
+                updated: 2026-06-19
+                summary: A loose question that still needs links.
+                confidence: mixed
+                status: active
+                ---
+
+                # Orphan Question
+                """,
+            )
+
+            run_script("build_graph.py", "--root", str(root))
+            graph = json.loads((root / "output" / "graph" / "graph.json").read_text(encoding="utf-8"))
+            insights = graph["insights"]
+
+            self.assertIn("summary", insights)
+            self.assertGreaterEqual(len(insights["topNodes"]), 1)
+            self.assertEqual(insights["topNodes"][0]["id"], "wiki/sources/platform-spec.md")
+            self.assertTrue(
+                any(item["id"] == "wiki/queries/orphan-question.md" and item["severity"] == "isolated" for item in insights["isolatedNodes"])
+            )
+            self.assertTrue(
+                any(
+                    {item["source"], item["target"]} == {
+                        "wiki/topics/platform.md",
+                        "wiki/concepts/platform-principles.md",
+                    }
+                    for item in insights["suggestedLinks"]
+                )
+            )
 
     def test_output_hub_shows_wiki_stats(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

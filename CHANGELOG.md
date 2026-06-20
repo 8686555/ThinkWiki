@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+### Added
+- Added `Graph Insights` to `output/graph/index.html` so the graph page now surfaces key pages, bridge pages, weakly connected pages, and suggested links.
+- Added structured graph insight data to `output/graph/graph.json` and `output/graph/graph.md` for downstream analysis and richer summaries.
+
 ## v1.0.1
 ### Fixed
 - Fixed GitHub Actions regression tests so spawned test scripts now prefer the repository runtime in `.venv` after `bootstrap`, instead of falling back to the system Python.

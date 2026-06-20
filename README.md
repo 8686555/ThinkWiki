@@ -6,6 +6,8 @@
 
 `ThinkWiki` 是一个符合 Agent Skills 规范的本地 Markdown 知识库 skill。它帮助 Agent 持续整理、沉淀、查询和可视化你的知识库，而不是每次都从原始资料重新推导。
 
+它现在不只会生成浏览页和图谱页，还会在图谱中主动标出 `Key Pages`、`Bridge Pages`、`Pages That Need Links` 和 `Suggested Links`，让用户直接看到 wiki 结构里最值得继续整理的地方。
+
 它适合这样的场景：
 
 - 你想把 PDF、网页、笔记和对话持续沉淀成可复用的本地知识库
@@ -23,7 +25,7 @@
 
 - 成果入口页：用户最容易直接打开的统一入口，也会展示当前 wiki 的页面规模和图谱状态
 - 浏览页：适合按页面类型、状态、置信度浏览整个 wiki
-- 图谱页：适合查看页面之间的引用、包含和链接关系
+- 图谱页：适合查看页面之间的引用、包含和链接关系，也会直接给出图谱洞察和补链建议
 - 这三张图都来自仓库内 `docs/demo-wiki` 的真实输出，而不是手工绘制的示意图
 - 如需重新生成 README 截图，可执行：`python3 scripts/capture_readme_screenshots.py`
 
@@ -60,7 +62,19 @@
 - 基于已有知识页做证据优先问答
 - 将高价值结果沉淀为 `query / synthesis / decision / concept`
 - 生成本地浏览页和离线知识图谱
+- 在图谱页识别关键页面、桥接页面、弱连接页面和建议补链
 - 检查运行时依赖、结构和链接健康度
+
+## Graph Insights
+
+`ThinkWiki` 的图谱页不只是把页面节点画出来，它还会在右侧直接给出结构洞察：
+
+- `Key Pages`：当前知识库里最关键、最值得先读的页面
+- `Bridge Pages`：连接多个主题区域的桥接页面
+- `Pages That Need Links`：还比较孤立或关系太弱的页面
+- `Suggested Links`：基于关键词、来源和邻接关系给出的补链建议
+
+这让 `output/graph/index.html` 更像一个知识图谱探索器，而不只是静态关系图。
 
 ## 为什么适合作为 Agent Skill
 

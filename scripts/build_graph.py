@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 
 from utils import (
@@ -77,6 +78,28 @@ EDGE_STYLES = {
         "highlight": "rgba(251,146,60,0.96)",
         "dash": "2 6",
     },
+}
+
+TOKEN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{2,}")
+COMMON_TOKENS = {
+    "about",
+    "after",
+    "also",
+    "and",
+    "are",
+    "between",
+    "from",
+    "have",
+    "into",
+    "that",
+    "their",
+    "there",
+    "these",
+    "this",
+    "through",
+    "using",
+    "with",
+    "wiki",
 }
 
 
@@ -184,6 +207,265 @@ def node_type_for_path(node_id: str) -> str:
     return "file"
 
 
+def text_tokens(*parts: object) -> set[str]:
+    tokens: set[str] = set()
+    for part in parts:
+        for token in TOKEN_RE.findall(str(part or "").lower()):
+            if token in COMMON_TOKENS:
+                continue
+            tokens.add(token)
+    return tokens
+
+
+def node_metrics(
+    nodes: list[dict[str, object]],
+    edges: list[dict[str, str]],
+) -> dict[str, dict[str, object]]:
+    metrics: dict[str, dict[str, object]] = {
+        str(node["id"]): {
+            "degree": 0,
+            "inbound": 0,
+            "outbound": 0,
+            "neighbor_ids": set(),
+            "neighbor_types": set(),
+            "edge_types": set(),
+        }
+        for node in nodes
+    }
+
+    node_type_map = {str(node["id"]): str(node.get("type") or "page") for node in nodes}
+    for edge in edges:
+        source = str(edge.get("source") or "")
+        target = str(edge.get("target") or "")
+        edge_type = str(edge.get("type") or "links_to")
+        if source not in metrics or target not in metrics:
+            continue
+        metrics[source]["degree"] += 1
+        metrics[source]["outbound"] += 1
+        metrics[source]["neighbor_ids"].add(target)
+        metrics[source]["neighbor_types"].add(node_type_map.get(target, "page"))
+        metrics[source]["edge_types"].add(edge_type)
+
+        metrics[target]["degree"] += 1
+        metrics[target]["inbound"] += 1
+        metrics[target]["neighbor_ids"].add(source)
+        metrics[target]["neighbor_types"].add(node_type_map.get(source, "page"))
+        metrics[target]["edge_types"].add(edge_type)
+
+    return metrics
+
+
+def compute_link_suggestions(
+    nodes: list[dict[str, object]],
+    metrics: dict[str, dict[str, object]],
+    edges: list[dict[str, str]],
+    limit: int = 8,
+) -> list[dict[str, object]]:
+    undirected_edges = {
+        tuple(sorted((str(edge.get("source") or ""), str(edge.get("target") or ""))))
+        for edge in edges
+    }
+    candidates = [
+        node for node in nodes if str(node.get("type") or "page") not in {"raw", "file"}
+    ]
+    candidate_data = {
+        str(node["id"]): {
+            "label": str(node.get("label") or node["id"]),
+            "tokens": text_tokens(node.get("label"), node.get("summary"), node.get("path")),
+            "sources": {str(item).strip() for item in node.get("sources", []) if str(item).strip()},
+        }
+        for node in candidates
+    }
+
+    suggestions: list[dict[str, object]] = []
+    for index, left in enumerate(candidates):
+        left_id = str(left["id"])
+        for right in candidates[index + 1 :]:
+            right_id = str(right["id"])
+            if tuple(sorted((left_id, right_id))) in undirected_edges:
+                continue
+
+            left_data = candidate_data[left_id]
+            right_data = candidate_data[right_id]
+            shared_tokens = sorted(left_data["tokens"] & right_data["tokens"])
+            shared_sources = sorted(left_data["sources"] & right_data["sources"])
+            shared_neighbors = sorted(
+                set(metrics[left_id]["neighbor_ids"]) & set(metrics[right_id]["neighbor_ids"])
+            )
+
+            score = 0
+            reasons: list[str] = []
+            if shared_sources:
+                score += 5 + min(2, len(shared_sources))
+                reasons.append("shared sources")
+            if shared_tokens:
+                score += min(4, len(shared_tokens)) * 2
+                reasons.append("shared keywords")
+            if shared_neighbors:
+                score += 2
+                reasons.append("shared graph neighbors")
+            if str(left.get("type") or "") == str(right.get("type") or ""):
+                score += 1
+
+            if score < 5:
+                continue
+
+            suggestions.append({
+                "source": left_id,
+                "sourceLabel": left_data["label"],
+                "target": right_id,
+                "targetLabel": right_data["label"],
+                "score": score,
+                "reasons": reasons,
+                "sharedTokens": shared_tokens[:4],
+                "sharedSources": shared_sources[:3],
+            })
+
+    return sorted(
+        suggestions,
+        key=lambda item: (
+            -int(item["score"]),
+            str(item["sourceLabel"]).lower(),
+            str(item["targetLabel"]).lower(),
+        ),
+    )[:limit]
+
+
+def graph_summary_text(insights: dict[str, object]) -> str:
+    stats = insights["stats"]
+    isolated_count = int(stats["isolatedCount"])
+    weak_count = int(stats["weakCount"])
+    suggestion_count = len(insights["suggestedLinks"])
+    bridge_count = len(insights["bridgeNodes"])
+    top_node = next(iter(insights["topNodes"]), None)
+    if top_node:
+        lead = f"当前最关键的页面是 {top_node['title']}。"
+    else:
+        lead = "当前图谱还在形成阶段。"
+
+    if isolated_count:
+        health = f"有 {isolated_count} 个孤立页面需要优先补链接。"
+    elif weak_count:
+        health = f"有 {weak_count} 个弱连接页面值得继续整理。"
+    else:
+        health = "主要页面已经形成基础连接。"
+
+    if suggestion_count:
+        next_step = f"当前可优先检查 {suggestion_count} 条建议补链。"
+    elif bridge_count:
+        next_step = f"可以先从 {bridge_count} 个桥接页面继续扩展结构。"
+    else:
+        next_step = "下一步可以继续补摘要、来源或跨页面链接。"
+    return " ".join([lead, health, next_step])
+
+
+def compute_graph_insights(
+    nodes: list[dict[str, object]],
+    edges: list[dict[str, str]],
+) -> dict[str, object]:
+    metrics = node_metrics(nodes, edges)
+    node_items: list[dict[str, object]] = []
+    isolated_nodes: list[dict[str, object]] = []
+    bridge_nodes: list[dict[str, object]] = []
+
+    for node in nodes:
+        node_id = str(node["id"])
+        info = metrics[node_id]
+        degree = int(info["degree"])
+        inbound = int(info["inbound"])
+        outbound = int(info["outbound"])
+        neighbor_types = sorted(str(item) for item in info["neighbor_types"])
+        edge_types = sorted(str(item) for item in info["edge_types"])
+        top_score = degree * 3 + inbound * 2 + len(neighbor_types) * 2 + len(edge_types)
+        bridge_score = len(neighbor_types) * 3 + len(edge_types) * 2 + max(0, degree - 1)
+
+        node_item = {
+            "id": node_id,
+            "title": str(node.get("label") or node_id),
+            "type": str(node.get("type") or "page"),
+            "degree": degree,
+            "inbound": inbound,
+            "outbound": outbound,
+            "neighborTypes": neighbor_types,
+            "edgeTypes": edge_types,
+            "topScore": top_score,
+            "bridgeScore": bridge_score,
+        }
+        node_items.append(node_item)
+
+        if degree == 0:
+            isolated_nodes.append({
+                "id": node_id,
+                "title": node_item["title"],
+                "type": node_item["type"],
+                "severity": "isolated",
+                "reason": "还没有和其他页面建立任何关系",
+            })
+        elif degree == 1:
+            isolated_nodes.append({
+                "id": node_id,
+                "title": node_item["title"],
+                "type": node_item["type"],
+                "severity": "weak",
+                "reason": "目前只有 1 条关系，建议继续补链",
+            })
+
+        if degree >= 2 and len(neighbor_types) >= 2:
+            bridge_nodes.append({
+                "id": node_id,
+                "title": node_item["title"],
+                "type": node_item["type"],
+                "score": bridge_score,
+                "reason": f"连接了 {len(neighbor_types)} 种页面类型，适合作为结构桥梁",
+            })
+
+    top_nodes = sorted(
+        node_items,
+        key=lambda item: (
+            -int(item["topScore"]),
+            -int(item["degree"]),
+            str(item["title"]).lower(),
+        ),
+    )[:6]
+    bridge_nodes = sorted(
+        bridge_nodes,
+        key=lambda item: (-int(item["score"]), str(item["title"]).lower()),
+    )[:5]
+    isolated_nodes = sorted(
+        isolated_nodes,
+        key=lambda item: (
+            0 if str(item["severity"]) == "isolated" else 1,
+            str(item["title"]).lower(),
+        ),
+    )[:8]
+    suggested_links = compute_link_suggestions(nodes, metrics, edges)
+
+    insights = {
+        "stats": {
+            "nodeCount": len(nodes),
+            "edgeCount": len(edges),
+            "isolatedCount": sum(1 for item in isolated_nodes if item["severity"] == "isolated"),
+            "weakCount": sum(1 for item in isolated_nodes if item["severity"] == "weak"),
+            "averageDegree": round((len(edges) * 2 / len(nodes)) if nodes else 0, 2),
+        },
+        "topNodes": [
+            {
+                "id": item["id"],
+                "title": item["title"],
+                "type": item["type"],
+                "score": item["topScore"],
+                "reason": f"总关系 {item['degree']}，入边 {item['inbound']}，覆盖 {len(item['neighborTypes'])} 种邻居类型",
+            }
+            for item in top_nodes
+        ],
+        "bridgeNodes": bridge_nodes,
+        "isolatedNodes": isolated_nodes,
+        "suggestedLinks": suggested_links,
+    }
+    insights["summary"] = graph_summary_text(insights)
+    return insights
+
+
 def compute_layout(nodes: list[dict[str, object]], edges: list[dict[str, str]]) -> tuple[dict[str, dict[str, int]], int, int]:
     columns: dict[int, list[dict[str, object]]] = {}
     degrees: dict[str, int] = {str(node["id"]): 0 for node in nodes}
@@ -232,6 +514,9 @@ def compute_layout(nodes: list[dict[str, object]], edges: list[dict[str, str]]) 
 def html_payload(root: Path, graph: dict[str, object]) -> dict[str, object]:
     nodes = list(graph.get("nodes", []))
     edges = list(graph.get("edges", []))
+    insights = graph.get("insights")
+    if not isinstance(insights, dict):
+        insights = compute_graph_insights(nodes, edges)
     positions, width, height = compute_layout(nodes, edges)
 
     rendered_nodes: list[dict[str, object]] = []
@@ -263,6 +548,7 @@ def html_payload(root: Path, graph: dict[str, object]) -> dict[str, object]:
         "canvasHeight": height,
         "nodes": rendered_nodes,
         "edges": edges,
+        "insights": insights,
         "edgeStyles": EDGE_STYLES,
     }
 
@@ -473,6 +759,66 @@ def render_graph_html(payload: dict[str, object]) -> str:
       color: var(--accent);
       text-decoration: none;
     }}
+    .section-title {{
+      margin: 18px 0 10px;
+      font-size: 0.95rem;
+    }}
+    .insight-summary {{
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.6;
+    }}
+    .insight-list {{
+      display: grid;
+      gap: 10px;
+    }}
+    .insight-item {{
+      width: 100%;
+      text-align: left;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 14px;
+      padding: 12px;
+      margin: 0;
+    }}
+    .insight-item.active {{
+      border-color: rgba(138,180,255,0.52);
+      background: rgba(138,180,255,0.12);
+    }}
+    .insight-item strong {{
+      display: block;
+      margin-bottom: 4px;
+      font-size: 0.95rem;
+    }}
+    .insight-meta {{
+      color: var(--muted);
+      font-size: 0.88rem;
+      line-height: 1.5;
+    }}
+    .insight-score {{
+      display: inline-block;
+      margin-top: 8px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.05);
+      color: var(--muted);
+      font-size: 0.82rem;
+    }}
+    .insight-reasons {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+    }}
+    .insight-reason {{
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.08);
+      color: var(--muted);
+      font-size: 0.8rem;
+    }}
     svg {{
       display: block;
       background:
@@ -581,6 +927,10 @@ def render_graph_html(payload: dict[str, object]) -> str:
     </main>
     <aside class="panel right">
       <div class="card">
+        <h2 class="title">Graph Insights</h2>
+        <div id="insightsPanel" class="empty">正在加载图谱洞察...</div>
+      </div>
+      <div class="card">
         <h2 class="title">节点详情</h2>
         <div id="detailPanel" class="empty">点击图中的节点查看摘要、来源、状态和页面路径。</div>
       </div>
@@ -594,9 +944,18 @@ def render_graph_html(payload: dict[str, object]) -> str:
     const confidenceFilterEl = document.getElementById("confidenceFilter");
     const scopeFilterEl = document.getElementById("scopeFilter");
     const resetBtn = document.getElementById("resetBtn");
+    const insightsPanel = document.getElementById("insightsPanel");
     const detailPanel = document.getElementById("detailPanel");
     const svg = document.getElementById("graph");
     const graphStage = document.getElementById("graphStage");
+    const insights = payload.insights || {{
+      stats: {{}},
+      topNodes: [],
+      bridgeNodes: [],
+      isolatedNodes: [],
+      suggestedLinks: [],
+      summary: "",
+    }};
     const edgeStyles = payload.edgeStyles || {{}};
     const edgeTypeInputs = Array.from(document.querySelectorAll('input[id^="edgeType-"]'));
     const focusButtons = Array.from(document.querySelectorAll("[data-focus-type]"));
@@ -610,6 +969,7 @@ def render_graph_html(payload: dict[str, object]) -> str:
     }});
 
     let activeNodeId = "";
+    let activeSuggestionKey = "";
 
     function readHashNodeId() {{
       const raw = String(window.location.hash || "").replace(/^#/, "");
@@ -633,6 +993,18 @@ def render_graph_html(payload: dict[str, object]) -> str:
         .replaceAll(">", "&gt;")
         .replaceAll('"', "&quot;")
         .replaceAll("'", "&#39;");
+    }}
+
+    function suggestionKey(sourceId, targetId) {{
+      return [String(sourceId || ""), String(targetId || "")].sort().join("::");
+    }}
+
+    function activeSuggestionNodeIds() {{
+      return new Set(
+        String(activeSuggestionKey || "")
+          .split("::")
+          .filter(Boolean)
+      );
     }}
 
     function enabledEdgeTypes() {{
@@ -740,6 +1112,91 @@ def render_graph_html(payload: dict[str, object]) -> str:
       return stats;
     }}
 
+    function renderInsightNodeList(title, items, options = {{}}) {{
+      const emptyText = options.emptyText || "当前没有可显示的项目。";
+      if (!items || !items.length) {{
+        return `
+          <h3 class="section-title">${{escapeHtml(title)}}</h3>
+          <div class="empty">${{escapeHtml(emptyText)}}</div>
+        `;
+      }}
+      const activeSuggestionNodes = activeSuggestionNodeIds();
+      const body = items.map((item) => {{
+        const isActive = activeNodeId === item.id || activeSuggestionNodes.has(item.id);
+        const score = item.score ? `<span class="insight-score">score ${{escapeHtml(item.score)}}</span>` : "";
+        return `
+          <button
+            type="button"
+            class="insight-item${{isActive ? " active" : ""}}"
+            data-insight-node="${{escapeHtml(item.id)}}"
+          >
+            <strong>${{escapeHtml(item.title)}}</strong>
+            <div class="insight-meta">${{escapeHtml(item.reason || "")}}</div>
+            ${{score}}
+          </button>
+        `;
+      }}).join("");
+      return `<h3 class="section-title">${{escapeHtml(title)}}</h3><div class="insight-list">${{body}}</div>`;
+    }}
+
+    function renderSuggestionList(items) {{
+      if (!items || !items.length) {{
+        return `
+          <h3 class="section-title">Suggested Links</h3>
+          <div class="empty">当前没有高置信度的建议补链。</div>
+        `;
+      }}
+      const body = items.map((item) => {{
+        const itemKey = suggestionKey(item.source, item.target);
+        const isActive = activeSuggestionKey === itemKey;
+        const reasons = (item.reasons || []).map((reason) =>
+          `<span class="insight-reason">${{escapeHtml(reason)}}</span>`
+        ).join("");
+        return `
+          <button
+            type="button"
+            class="insight-item${{isActive ? " active" : ""}}"
+            data-suggestion-source="${{escapeHtml(item.source)}}"
+            data-suggestion-target="${{escapeHtml(item.target)}}"
+          >
+            <strong>${{escapeHtml(item.sourceLabel)}} → ${{escapeHtml(item.targetLabel)}}</strong>
+            <div class="insight-meta">建议补链，帮助用户在图谱里显式建立上下文。</div>
+            <span class="insight-score">score ${{escapeHtml(item.score)}}</span>
+            <div class="insight-reasons">${{reasons}}</div>
+          </button>
+        `;
+      }}).join("");
+      return `<h3 class="section-title">Suggested Links</h3><div class="insight-list">${{body}}</div>`;
+    }}
+
+    function renderInsights() {{
+      const stats = insights.stats || {{}};
+      const overviewStats = `
+        <div class="stats">
+          <div class="stat"><strong>${{escapeHtml(stats.nodeCount || 0)}}</strong><span class="muted">Nodes</span></div>
+          <div class="stat"><strong>${{escapeHtml(stats.edgeCount || 0)}}</strong><span class="muted">Edges</span></div>
+          <div class="stat"><strong>${{escapeHtml(stats.isolatedCount || 0)}}</strong><span class="muted">Isolated</span></div>
+          <div class="stat"><strong>${{escapeHtml(stats.averageDegree || 0)}}</strong><span class="muted">Avg Degree</span></div>
+        </div>
+      `;
+      const selectionNote = activeSuggestionKey
+        ? `<p class="insight-summary">当前高亮的是一条建议补链，图中会用虚线显示推荐连接。</p>`
+        : activeNodeId
+          ? `<p class="insight-summary">当前已选中节点，洞察列表会同步高亮相关页面。</p>`
+          : "";
+
+      insightsPanel.className = "";
+      insightsPanel.innerHTML = `
+        ${{overviewStats}}
+        <p class="insight-summary">${{escapeHtml(insights.summary || "图谱已生成，可以从关键节点开始探索。")}}</p>
+        ${{selectionNote}}
+        ${{renderInsightNodeList("Key Pages", insights.topNodes || [], {{ emptyText: "还没有足够多的节点来识别关键页面。" }})}}
+        ${{renderInsightNodeList("Bridge Pages", insights.bridgeNodes || [], {{ emptyText: "当前还没有明显的桥接页面。" }})}}
+        ${{renderInsightNodeList("Pages That Need Links", insights.isolatedNodes || [], {{ emptyText: "当前没有孤立或弱连接页面。" }})}}
+        ${{renderSuggestionList(insights.suggestedLinks || [])}}
+      `;
+    }}
+
     function renderDetail(node) {{
       if (!node) {{
         detailPanel.className = "empty";
@@ -781,10 +1238,33 @@ def render_graph_html(payload: dict[str, object]) -> str:
       `;
     }}
 
+    function selectNode(nodeId, options = {{}}) {{
+      activeNodeId = nodeMap.has(nodeId) ? nodeId : "";
+      activeSuggestionKey = options.keepSuggestion ? activeSuggestionKey : "";
+      if (options.updateHash !== false) {{
+        updateHash(activeNodeId);
+      }}
+      renderInsights();
+      renderDetail(activeNodeId ? nodeMap.get(activeNodeId) : null);
+      renderGraph();
+      centerNodeInStage(activeNodeId);
+    }}
+
+    function selectSuggestedLink(sourceId, targetId) {{
+      activeSuggestionKey = suggestionKey(sourceId, targetId);
+      activeNodeId = nodeMap.has(sourceId) ? sourceId : "";
+      updateHash(activeNodeId);
+      renderInsights();
+      renderDetail(activeNodeId ? nodeMap.get(activeNodeId) : null);
+      renderGraph();
+      centerNodeInStage(activeNodeId);
+    }}
+
     function renderGraph() {{
       svg.innerHTML = "";
       const visibleIds = visibleNodeIds();
       const enabledTypes = enabledEdgeTypes();
+      const suggestedNodes = activeSuggestionNodeIds();
 
       payload.edges.forEach((edge) => {{
         if (!enabledTypes.has(edge.type || "")) return;
@@ -815,21 +1295,44 @@ def render_graph_html(payload: dict[str, object]) -> str:
         svg.appendChild(line);
       }});
 
+      if (suggestedNodes.size === 2) {{
+        const [sourceId, targetId] = Array.from(suggestedNodes.values());
+        if (visibleIds.has(sourceId) && visibleIds.has(targetId)) {{
+          const sourceNode = nodeMap.get(sourceId);
+          const targetNode = nodeMap.get(targetId);
+          if (sourceNode && targetNode) {{
+            const suggestionLine = createSvgEl("line", {{
+              x1: sourceNode.x,
+              y1: sourceNode.y,
+              x2: targetNode.x,
+              y2: targetNode.y,
+              stroke: "rgba(138,180,255,0.96)",
+              "stroke-width": 2.6,
+              opacity: 0.96,
+            }});
+            suggestionLine.setAttribute("stroke-dasharray", "10 6");
+            suggestionLine.setAttribute("data-suggested-link", activeSuggestionKey);
+            svg.appendChild(suggestionLine);
+          }}
+        }}
+      }}
+
       payload.nodes.forEach((node) => {{
         if (!visibleIds.has(node.id)) return;
         const isNeighbor = activeNodeId && (neighbors.get(activeNodeId) || new Set()).has(node.id);
         const isActive = activeNodeId === node.id;
-        const faded = activeNodeId && !isActive && !isNeighbor;
+        const isSuggested = suggestedNodes.has(node.id);
+        const faded = activeNodeId && !isActive && !isNeighbor && !isSuggested;
 
         const group = createSvgEl("g", {{
           transform: `translate(${{node.x}}, ${{node.y}})`,
           style: "cursor:pointer;",
         }});
         const circle = createSvgEl("circle", {{
-          r: isActive ? 16 : 12,
+          r: isActive ? 16 : isSuggested ? 14 : 12,
           fill: node.color || "#60a5fa",
-          stroke: isActive ? "#ffffff" : "rgba(255,255,255,0.25)",
-          "stroke-width": isActive ? 2.4 : 1.2,
+          stroke: isActive ? "#ffffff" : isSuggested ? "#8ab4ff" : "rgba(255,255,255,0.25)",
+          "stroke-width": isActive ? 2.4 : isSuggested ? 2 : 1.2,
           opacity: faded ? 0.62 : 1,
         }});
         const label = createSvgEl("text", {{
@@ -844,11 +1347,7 @@ def render_graph_html(payload: dict[str, object]) -> str:
         group.appendChild(circle);
         group.appendChild(label);
         group.addEventListener("click", () => {{
-          activeNodeId = node.id;
-          updateHash(node.id);
-          renderDetail(node);
-          renderGraph();
-          centerNodeInStage(node.id);
+          selectNode(node.id);
         }});
         svg.appendChild(group);
       }});
@@ -856,37 +1355,69 @@ def render_graph_html(payload: dict[str, object]) -> str:
 
     function resetView() {{
       activeNodeId = "";
+      activeSuggestionKey = "";
       updateHash("");
+      renderInsights();
       renderDetail(null);
       renderGraph();
     }}
 
-    searchEl.addEventListener("input", renderGraph);
-    scopeFilterEl.addEventListener("change", renderGraph);
-    typeFilterEl.addEventListener("change", () => {{
-      syncFocusButtons();
+    insightsPanel.addEventListener("click", (event) => {{
+      const target = event.target.closest("button");
+      if (!target) return;
+      const nodeId = target.getAttribute("data-insight-node") || "";
+      if (nodeId) {{
+        selectNode(nodeId, {{ updateHash: true, keepSuggestion: false }});
+        return;
+      }}
+      const sourceId = target.getAttribute("data-suggestion-source") || "";
+      const targetId = target.getAttribute("data-suggestion-target") || "";
+      if (sourceId && targetId) {{
+        selectSuggestedLink(sourceId, targetId);
+      }}
+    }});
+
+    searchEl.addEventListener("input", () => {{
+      renderInsights();
       renderGraph();
     }});
-    statusFilterEl.addEventListener("change", renderGraph);
-    confidenceFilterEl.addEventListener("change", renderGraph);
-    edgeTypeInputs.forEach((input) => input.addEventListener("change", renderGraph));
+    scopeFilterEl.addEventListener("change", () => {{
+      renderInsights();
+      renderGraph();
+    }});
+    typeFilterEl.addEventListener("change", () => {{
+      syncFocusButtons();
+      renderInsights();
+      renderGraph();
+    }});
+    statusFilterEl.addEventListener("change", () => {{
+      renderInsights();
+      renderGraph();
+    }});
+    confidenceFilterEl.addEventListener("change", () => {{
+      renderInsights();
+      renderGraph();
+    }});
+    edgeTypeInputs.forEach((input) => input.addEventListener("change", () => {{
+      renderInsights();
+      renderGraph();
+    }}));
     focusButtons.forEach((button) => button.addEventListener("click", () => {{
       typeFilterEl.value = button.getAttribute("data-focus-type") || "";
       syncFocusButtons();
+      renderInsights();
       renderGraph();
     }}));
     resetBtn.addEventListener("click", resetView);
     window.addEventListener("hashchange", () => {{
       const nextNodeId = readHashNodeId();
-      activeNodeId = nodeMap.has(nextNodeId) ? nextNodeId : "";
-      renderDetail(activeNodeId ? nodeMap.get(activeNodeId) : null);
-      renderGraph();
-      centerNodeInStage(activeNodeId);
+      selectNode(nextNodeId, {{ updateHash: false }});
     }});
 
     const initialNodeId = readHashNodeId();
     activeNodeId = nodeMap.has(initialNodeId) ? initialNodeId : "";
     syncFocusButtons();
+    renderInsights();
     renderDetail(activeNodeId ? nodeMap.get(activeNodeId) : null);
     renderGraph();
     centerNodeInStage(activeNodeId);
@@ -932,14 +1463,41 @@ def main() -> int:
 
     graph_nodes = sorted(nodes.values(), key=lambda node: str(node["id"]))
     graph_edges = sorted(edges, key=lambda edge: (edge["source"], edge["type"], edge["target"]))
-    graph = {"generated_at": today_str(), "nodes": graph_nodes, "edges": graph_edges}
+    insights = compute_graph_insights(graph_nodes, graph_edges)
+    graph = {
+        "generated_at": today_str(),
+        "nodes": graph_nodes,
+        "edges": graph_edges,
+        "insights": insights,
+    }
     graph_dir = root / "output" / "graph"
     graph_json_path = graph_dir / "graph.json"
     graph_md_path = graph_dir / "graph.md"
     graph_html_path = graph_dir / "index.html"
     write_text(graph_json_path, json.dumps(graph, ensure_ascii=False, indent=2))
 
-    lines = ["# Knowledge Graph", "", f"- Nodes: {len(graph_nodes)}", f"- Edges: {len(graph_edges)}", "", "## Nodes"]
+    lines = [
+        "# Knowledge Graph",
+        "",
+        f"- Nodes: {len(graph_nodes)}",
+        f"- Edges: {len(graph_edges)}",
+        f"- Summary: {insights['summary']}",
+        "",
+        "## Key Pages",
+    ]
+    lines.extend(
+        f"- {item['title']} ({item['type']}) | score={item['score']} | {item['reason']}"
+        for item in insights["topNodes"]
+    )
+    lines.extend(["", "## Suggested Links"])
+    if insights["suggestedLinks"]:
+        lines.extend(
+            f"- {item['source']} <-> {item['target']} | score={item['score']} | {', '.join(item['reasons'])}"
+            for item in insights["suggestedLinks"]
+        )
+    else:
+        lines.append("- No suggested links")
+    lines.extend(["", "## Nodes"])
     lines.extend(f"- {node['type']}: {node['label']} ({node['id']})" for node in graph_nodes)
     lines.extend(["", "## Edges"])
     lines.extend(f"- {edge['source']} --{edge['type']}--> {edge['target']}" for edge in graph_edges)
