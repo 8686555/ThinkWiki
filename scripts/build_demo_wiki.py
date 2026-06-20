@@ -20,6 +20,10 @@ RAW_FILES = {
     "review-checklist": "# Review Checklist\n\nHuman review keeps model behavior aligned with policy and delivery goals.\n",
 }
 
+INBOX_FILES = {
+    "team-retrospective": "# Team Retrospective\n\nCollect this note in inbox first, then decide whether it should become a source page.\n",
+}
+
 WIKI_FILES = {
     "wiki/sources/platform-spec.md": """
     ---
@@ -345,7 +349,10 @@ def build_demo(root: Path) -> None:
         "wiki/syntheses",
         "wiki/queries",
         "raw/articles",
+        "raw/inbox",
         "normalized/articles",
+        "normalized/inbox",
+        "output/inbox",
         "output/graph",
         "output/viewer",
     ]:
@@ -357,6 +364,10 @@ def build_demo(root: Path) -> None:
     for slug, content in RAW_FILES.items():
         write_text(root / "raw" / "articles" / f"{slug}.md", content)
         write_text(root / "normalized" / "articles" / f"{slug}.md", content)
+
+    for slug, content in INBOX_FILES.items():
+        write_text(root / "raw" / "inbox" / f"2026-06-20-{slug}.md", content)
+        write_text(root / "normalized" / "inbox" / f"2026-06-20-{slug}.md", content)
 
     for relative, content in WIKI_FILES.items():
         write_text(root / relative, content)

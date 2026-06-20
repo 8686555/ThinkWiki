@@ -1,6 +1,17 @@
 # Changelog
 
 ## Unreleased
+
+## v1.3.0
+### Added
+- Added a new `clip` command and `inbox` storage flow so webpages, pasted text, and local files can be collected first and ingested into the wiki later.
+- Added an `output/inbox/index.html` review page so users can browse pending inbox items and copy the next `ingest` command without leaving the browser.
+
+### Changed
+- Updated `output/index.html` so the workspace home now shows an `Inbox Queue`, inbox counts, clip-driven next actions, and a direct entry to the inbox review page.
+- Updated `clip` so it backfills missing `raw/inbox` and `normalized/inbox` directories for older wikis, regenerates `output/inbox/index.html`, and refreshes the output home after each capture.
+
+## v1.2.0
 ### Added
 - Added a workspace-style `output/index.html` home that surfaces `What Changed`, `Next Actions`, `Needs Attention`, `Graph Snapshot`, and `Featured Pages`.
 - Added homepage recommendations that reuse graph insight data so users can move from the output hub into the right next action faster.

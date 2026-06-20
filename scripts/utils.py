@@ -124,12 +124,14 @@ def ensure_runtime_dirs(root: Path) -> None:
         "raw/conversations",
         "raw/web",
         "raw/assets",
+        "raw/inbox",
         "normalized/articles",
         "normalized/papers",
         "normalized/books",
         "normalized/conversations",
         "normalized/web",
         "normalized/assets",
+        "normalized/inbox",
         "wiki/concepts",
         "wiki/topics",
         "wiki/sources",
@@ -138,6 +140,7 @@ def ensure_runtime_dirs(root: Path) -> None:
         "wiki/decisions",
         "output/graph",
         "output/viewer",
+        "output/inbox",
         "output/exports",
     ]:
         (root / relative).mkdir(parents=True, exist_ok=True)
@@ -180,6 +183,54 @@ def _first_markdown_heading(path: Path) -> str:
 
 def _page_sort_key(page: dict) -> tuple[str, str]:
     return (str(page.get("updated", "") or ""), str(page.get("title", "") or ""))
+
+
+def _humanize_label(value: str) -> str:
+    text = re.sub(r"[-_]+", " ", value).strip()
+    return text or value or "Untitled"
+
+
+def collect_inbox_items(root: Path) -> list[dict]:
+    inbox_dir = root / "normalized" / "inbox"
+    if not inbox_dir.exists():
+        return []
+
+    def sort_key(path: Path) -> tuple[float, str]:
+        try:
+            return (path.stat().st_mtime, path.name)
+        except OSError:
+            return (0.0, path.name)
+
+    paths = sorted(inbox_dir.glob("*.md"), key=sort_key, reverse=True)
+    items: list[dict] = []
+    for path in paths:
+        text = read_text(path)
+        meta, body = parse_frontmatter(text)
+        repo_path = path.relative_to(root).as_posix()
+        title = (
+            _first_markdown_heading(path)
+            or str(meta.get("title", "") or "").strip()
+            or _humanize_label(path.stem)
+        )
+        summary = extract_summary(meta, body)
+        try:
+            updated = datetime.fromtimestamp(path.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+        except OSError:
+            updated = "n/a"
+        items.append({
+            "title": title,
+            "summary": summary,
+            "updated": updated,
+            "path": repo_path,
+            "href": Path(os.path.relpath(path, start=root / "output")).as_posix(),
+            "ingest_command": f"python scripts/thinkwiki ingest --root {root} --source {repo_path}",
+        })
+    return items
+
+
+def _recent_inbox_items(root: Path, limit: int = 4) -> tuple[int, list[dict]]:
+    items = collect_inbox_items(root)
+    return len(items), items[:limit]
 
 
 def _render_page_list(items: list[dict], empty_text: str) -> str:
@@ -246,6 +297,28 @@ def _render_action_cards(items: list[dict], empty_text: str) -> str:
     return "\n".join(cards)
 
 
+def _render_inbox_list(items: list[dict], empty_text: str) -> str:
+    if not items:
+        return "<div class='empty small'>{}</div>".format(escape(empty_text))
+    cards: list[str] = []
+    for item in items:
+        cards.append(
+            "<a class='mini-card' href='{href}' target='_blank' rel='noopener'>"
+            "<div class='mini-meta'><span class='mini-type'>inbox</span><span>{updated}</span></div>"
+            "<strong>{title}</strong>"
+            "<span>{summary}</span>"
+            "<code>{path}</code>"
+            "</a>".format(
+                href=escape(str(item.get("href", "") or "#"), quote=True),
+                updated=escape(str(item.get("updated", "") or "n/a")),
+                title=escape(str(item.get("title", "Untitled"))),
+                summary=escape(str(item.get("summary", "") or "(no summary yet)")),
+                path=escape(str(item.get("path", "") or "")),
+            )
+        )
+    return "\n".join(cards)
+
+
 def _recent_pages(pages: list[dict], limit: int = 4) -> list[dict]:
     return sorted(pages, key=_page_sort_key, reverse=True)[:limit]
 
@@ -297,13 +370,22 @@ def _attention_items(pages: list[dict], graph_insights: dict) -> list[str]:
 
 def _recommended_actions(
     *,
-    root: Path,
     viewer_exists: bool,
     graph_exists: bool,
     graph_insights: dict,
     recent_pages: list[dict],
+    inbox_page_exists: bool,
+    inbox_count: int,
+    inbox_items: list[dict],
 ) -> list[dict]:
     actions: list[dict] = []
+    if inbox_count:
+        actions.append({
+            "label": "Review",
+            "title": "处理 Inbox 待办",
+            "summary": "当前有 {} 条已采集内容，先检查最近一条，再决定是否正式 ingest。".format(inbox_count),
+            "href": "inbox/index.html" if inbox_page_exists else str((inbox_items[0] if inbox_items else {}).get("href", "") or "#"),
+        })
     if viewer_exists:
         actions.append({
             "label": "Read",
@@ -363,6 +445,7 @@ def write_output_home(root: Path) -> Path:
     output_dir = root / "output"
     viewer_path = output_dir / "viewer" / "index.html"
     graph_path = output_dir / "graph" / "index.html"
+    inbox_path = output_dir / "inbox" / "index.html"
     viewer_data = _load_json(output_dir / "viewer" / "viewer.json")
     graph_data = _load_json(output_dir / "graph" / "graph.json")
     wiki_title = _first_markdown_heading(root / "index.md") or root.name
@@ -371,8 +454,9 @@ def write_output_home(root: Path) -> Path:
     node_count = len(graph_data.get("nodes", [])) if isinstance(graph_data.get("nodes"), list) else 0
     edge_count = len(graph_data.get("edges", [])) if isinstance(graph_data.get("edges"), list) else 0
     graph_insights = graph_data.get("insights", {}) if isinstance(graph_data.get("insights"), dict) else {}
-    ready_outputs = int(viewer_path.exists()) + int(graph_path.exists())
+    ready_outputs = int(viewer_path.exists()) + int(graph_path.exists()) + int(inbox_path.exists())
     pages = viewer_data.get("pages", []) if isinstance(viewer_data.get("pages"), list) else []
+    inbox_count, inbox_items = _recent_inbox_items(root)
     recent_pages = _recent_pages(pages)
     generated_pages = _generated_pages(pages)
     featured_pages = _featured_pages(pages)
@@ -382,6 +466,7 @@ def write_output_home(root: Path) -> Path:
     key_pages = graph_insights.get("topNodes", []) if isinstance(graph_insights.get("topNodes"), list) else []
     output_items: list[str] = []
     for title, path, summary in [
+        ("Inbox Review", inbox_path, "查看待处理 inbox 条目，并复制下一步 ingest 命令"),
         ("本地浏览页", viewer_path, "按页面类型、置信度和状态浏览整个 wiki"),
         ("知识图谱", graph_path, "查看页面之间的引用、包含、关键页面和建议补链"),
     ]:
@@ -406,6 +491,7 @@ def write_output_home(root: Path) -> Path:
     stats: list[str] = []
     for label, value in [
         ("成果页", ready_outputs),
+        ("Inbox", inbox_count),
         ("页面数", page_count),
         ("图节点", node_count),
         ("图关系", edge_count),
@@ -422,14 +508,17 @@ def write_output_home(root: Path) -> Path:
     attention_html = _render_bullet_list(attention_items, "当前没有明显需要优先处理的问题。")
     actions_html = _render_action_cards(
         _recommended_actions(
-            root=root,
             viewer_exists=viewer_path.exists(),
             graph_exists=graph_path.exists(),
             graph_insights=graph_insights,
             recent_pages=recent_pages,
+            inbox_page_exists=inbox_path.exists(),
+            inbox_count=inbox_count,
+            inbox_items=inbox_items,
         ),
         "当前还没有可推荐的下一步动作。",
     )
+    inbox_html = _render_inbox_list(inbox_items, "还没有待处理的 inbox 条目。你可以先运行 clip 采集网页、文本或文件。")
     graph_snapshot_items: list[str] = []
     if graph_summary:
         graph_snapshot_items.append("<div class='snapshot-copy'>{}</div>".format(escape(graph_summary)))
@@ -525,7 +614,7 @@ def write_output_home(root: Path) -> Path:
     }}
     .stats {{
       display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
       gap: 12px;
     }}
     .stat {{
@@ -749,7 +838,7 @@ def write_output_home(root: Path) -> Path:
           <span class="badge">生成日期 {generated_at}</span>
         </div>
       </div>
-      <p class="lead">这里不只是成果入口页，而是当前 wiki 的工作台首页。你可以先看最近发生了什么、哪些页面值得继续整理，再决定进入浏览页还是图谱页。</p>
+      <p class="lead">这里不只是成果入口页，而是当前 wiki 的工作台首页。你可以先看最近发生了什么、哪些页面值得继续整理，以及 inbox 里还有哪些采集内容待正式入库，再决定进入浏览页还是图谱页。</p>
       <div class="stats">
         {stats}
       </div>
@@ -797,10 +886,15 @@ def write_output_home(root: Path) -> Path:
           {items}
         </div>
       </section>
+      <section class="panel">
+        <h2>Inbox Queue</h2>
+        <p>这里显示最近采集到 inbox 的内容。你可以先打开原始条目做快速复核，再决定是否运行 ingest 正式入库。</p>
+        {inbox_items}
+      </section>
     </div>
     <div class="guide">
       <strong>从这里开始</strong>
-      <span>先看 `What Changed` 和 `Needs Attention`，再决定进入浏览页或图谱页。如果你刚导入了新资料，建议重新运行 viewer 和 graph 以刷新工作台首页。</span>
+      <span>先看 `What Changed`、`Needs Attention` 和 `Inbox Queue`，再决定进入浏览页或图谱页。如果你刚导入或采集了新资料，建议重新运行 viewer 和 graph 以刷新工作台首页。</span>
     </div>
   </main>
 </body>
@@ -816,17 +910,208 @@ def write_output_home(root: Path) -> Path:
         attention=attention_html,
         graph_snapshot=graph_snapshot_html,
         featured_pages=featured_pages_html,
+        inbox_items=inbox_html,
     )
     target = output_dir / "index.html"
     write_text(target, html)
     return target
 
 
+def write_inbox_review(root: Path) -> Path:
+    output_dir = root / "output"
+    inbox_dir = output_dir / "inbox"
+    inbox_path = inbox_dir / "index.html"
+    items = collect_inbox_items(root)
+
+    cards: list[str] = []
+    for item in items:
+        normalized_target = root / str(item.get("path", ""))
+        normalized_href = Path(os.path.relpath(normalized_target, start=inbox_dir)).as_posix()
+        cards.append(
+            "<article class='card'>"
+            "<div class='meta'><span class='tag'>inbox</span><span>{updated}</span></div>"
+            "<h2>{title}</h2>"
+            "<p>{summary}</p>"
+            "<div class='path'><code>{path}</code></div>"
+            "<div class='actions'>"
+            "<a href='{normalized_href}' target='_blank' rel='noopener'>Open normalized note</a>"
+            "<a href='../index.html' target='_blank' rel='noopener'>Open workspace home</a>"
+            "</div>"
+            "<div class='command-label'>Next ingest command</div>"
+            "<pre>{command}</pre>"
+            "</article>".format(
+                updated=escape(str(item.get("updated", "") or "n/a")),
+                title=escape(str(item.get("title", "Untitled"))),
+                summary=escape(str(item.get("summary", "") or "(no summary yet)")),
+                path=escape(str(item.get("path", "") or "")),
+                normalized_href=escape(normalized_href, quote=True),
+                command=escape(str(item.get("ingest_command", "") or "")),
+            )
+        )
+
+    cards_html = "\n".join(cards) if cards else "<div class='empty'>还没有待处理的 inbox 条目。先运行 `python scripts/thinkwiki clip ...` 采集网页、文本或文件。</div>"
+    html = """<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ThinkWiki Inbox Review</title>
+  <style>
+    :root {{
+      --bg: #0b1020;
+      --panel: #121935;
+      --text: #edf2ff;
+      --muted: #a8b3cf;
+      --border: rgba(255,255,255,0.1);
+      --accent: #8ab4ff;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      min-height: 100vh;
+      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: linear-gradient(180deg, #0b1020 0%, #10172f 100%);
+      color: var(--text);
+      padding: 24px;
+    }}
+    .shell {{
+      width: min(1100px, 100%);
+      margin: 0 auto;
+    }}
+    .hero {{
+      margin-bottom: 22px;
+      border: 1px solid var(--border);
+      background: rgba(9, 13, 28, 0.86);
+      border-radius: 24px;
+      padding: 28px;
+    }}
+    .eyebrow {{
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 0.82rem;
+      margin-bottom: 10px;
+    }}
+    h1, h2, p {{ margin-top: 0; }}
+    .lead {{
+      color: var(--muted);
+      line-height: 1.6;
+      margin-bottom: 18px;
+      max-width: 70ch;
+    }}
+    .badges {{
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }}
+    .badge {{
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 6px 12px;
+      color: var(--muted);
+      background: rgba(255,255,255,0.03);
+    }}
+    .cards {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 14px;
+    }}
+    .card {{
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.03);
+      border-radius: 18px;
+      padding: 18px;
+    }}
+    .meta {{
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      color: var(--muted);
+      font-size: 0.9rem;
+      margin-bottom: 10px;
+    }}
+    .tag {{
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }}
+    .card p {{
+      color: var(--muted);
+      line-height: 1.55;
+    }}
+    .path {{
+      margin: 14px 0;
+    }}
+    .actions {{
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }}
+    a {{
+      color: var(--accent);
+      text-decoration: none;
+    }}
+    a:hover {{
+      text-decoration: underline;
+    }}
+    .command-label {{
+      color: var(--muted);
+      font-size: 0.92rem;
+      margin-bottom: 8px;
+    }}
+    pre {{
+      margin: 0;
+      padding: 14px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: var(--panel);
+      color: var(--accent);
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }}
+    .empty {{
+      border: 1px dashed var(--border);
+      border-radius: 18px;
+      padding: 18px;
+      color: var(--muted);
+      background: rgba(255,255,255,0.02);
+    }}
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <div class="eyebrow">Inbox Review</div>
+      <h1>{wiki_title}</h1>
+      <p class="lead">这里集中显示已经 clip 到 inbox、但还没有正式 ingest 的内容。你可以逐条复核清洗后的 Markdown，再直接复制下一步命令把它送进 wiki。</p>
+      <div class="badges">
+        <span class="badge">待处理条目 {count}</span>
+        <span class="badge"><a href="../index.html" target="_blank" rel="noopener">Open workspace home</a></span>
+      </div>
+    </section>
+    <section class="cards">
+      {cards}
+    </section>
+  </main>
+</body>
+</html>
+""".format(
+        wiki_title=escape(_first_markdown_heading(root / "index.md") or root.name),
+        count=escape(str(len(items))),
+        cards=cards_html,
+    )
+    write_text(inbox_path, html)
+    return inbox_path
+
+
 def refresh_output_home_if_present(root: Path) -> Path | None:
     output_dir = root / "output"
     viewer_exists = (output_dir / "viewer" / "index.html").exists()
     graph_exists = (output_dir / "graph" / "index.html").exists()
-    if not (viewer_exists or graph_exists):
+    inbox_exists = (output_dir / "inbox" / "index.html").exists()
+    if not (viewer_exists or graph_exists or inbox_exists):
         return None
     return write_output_home(root)
 

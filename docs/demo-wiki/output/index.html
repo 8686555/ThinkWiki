@@ -74,7 +74,7 @@
     }
     .stats {
       display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
       gap: 12px;
     }
     .stat {
@@ -298,9 +298,10 @@
           <span class="badge">生成日期 2026-06-20</span>
         </div>
       </div>
-      <p class="lead">这里不只是成果入口页，而是当前 wiki 的工作台首页。你可以先看最近发生了什么、哪些页面值得继续整理，再决定进入浏览页还是图谱页。</p>
+      <p class="lead">这里不只是成果入口页，而是当前 wiki 的工作台首页。你可以先看最近发生了什么、哪些页面值得继续整理，以及 inbox 里还有哪些采集内容待正式入库，再决定进入浏览页还是图谱页。</p>
       <div class="stats">
-        <div class='stat'><strong>2</strong><span>成果页</span></div>
+        <div class='stat'><strong>3</strong><span>成果页</span></div>
+<div class='stat'><strong>1</strong><span>Inbox</span></div>
 <div class='stat'><strong>11</strong><span>页面数</span></div>
 <div class='stat'><strong>14</strong><span>图节点</span></div>
 <div class='stat'><strong>44</strong><span>图关系</span></div>
@@ -324,10 +325,10 @@
         <h2>Next Actions</h2>
         <p>从这里直接进入最值得继续操作的下一步，而不是手动判断应该先看哪里。</p>
         <div class="actions">
-          <a class='action-card' href='viewer/index.html' target='_blank' rel='noopener'><span class='action-tag'>Read</span><strong>打开本地浏览页</strong><span>按页面类型、状态和置信度快速浏览整个 wiki。</span></a>
+          <a class='action-card' href='inbox/index.html' target='_blank' rel='noopener'><span class='action-tag'>Review</span><strong>处理 Inbox 待办</strong><span>当前有 1 条已采集内容，先检查最近一条，再决定是否正式 ingest。</span></a>
+<a class='action-card' href='viewer/index.html' target='_blank' rel='noopener'><span class='action-tag'>Read</span><strong>打开本地浏览页</strong><span>按页面类型、状态和置信度快速浏览整个 wiki。</span></a>
 <a class='action-card' href='graph/index.html' target='_blank' rel='noopener'><span class='action-tag'>Explore</span><strong>打开知识图谱</strong><span>进入图谱页，查看关键页面、桥接页面和建议补链。</span></a>
 <a class='action-card' href='graph/index.html' target='_blank' rel='noopener'><span class='action-tag'>Link</span><strong>检查建议补链</strong><span>图谱已识别 8 条高置信度建议补链。</span></a>
-<a class='action-card' href='viewer/index.html#page=wiki/queries/what-makes-ai-native-team.md' target='_blank' rel='noopener'><span class='action-tag'>Latest</span><strong>查看最近更新页面</strong><span>从最近更新的页面继续阅读或整理。</span></a>
         </div>
       </section>
     </div>
@@ -360,14 +361,20 @@
         <h2>Outputs Overview</h2>
         <p>浏览页和图谱页仍然是最重要的两个成果入口，但现在它们被纳入统一工作台视图。</p>
         <div class="grid">
-          <a class='card' href='viewer/index.html' target='_blank' rel='noopener'><strong>本地浏览页</strong><span>按页面类型、置信度和状态浏览整个 wiki</span><code>viewer/index.html</code></a>
+          <a class='card' href='inbox/index.html' target='_blank' rel='noopener'><strong>Inbox Review</strong><span>查看待处理 inbox 条目，并复制下一步 ingest 命令</span><code>inbox/index.html</code></a>
+<a class='card' href='viewer/index.html' target='_blank' rel='noopener'><strong>本地浏览页</strong><span>按页面类型、置信度和状态浏览整个 wiki</span><code>viewer/index.html</code></a>
 <a class='card' href='graph/index.html' target='_blank' rel='noopener'><strong>知识图谱</strong><span>查看页面之间的引用、包含、关键页面和建议补链</span><code>graph/index.html</code></a>
         </div>
+      </section>
+      <section class="panel">
+        <h2>Inbox Queue</h2>
+        <p>这里显示最近采集到 inbox 的内容。你可以先打开原始条目做快速复核，再决定是否运行 ingest 正式入库。</p>
+        <a class='mini-card' href='../normalized/inbox/2026-06-20-team-retrospective.md' target='_blank' rel='noopener'><div class='mini-meta'><span class='mini-type'>inbox</span><span>2026-06-20 22:23</span></div><strong>Team Retrospective</strong><span>Collect this note in inbox first, then decide whether it should become a source page.</span><code>normalized/inbox/2026-06-20-team-retrospective.md</code></a>
       </section>
     </div>
     <div class="guide">
       <strong>从这里开始</strong>
-      <span>先看 `What Changed` 和 `Needs Attention`，再决定进入浏览页或图谱页。如果你刚导入了新资料，建议重新运行 viewer 和 graph 以刷新工作台首页。</span>
+      <span>先看 `What Changed`、`Needs Attention` 和 `Inbox Queue`，再决定进入浏览页或图谱页。如果你刚导入或采集了新资料，建议重新运行 viewer 和 graph 以刷新工作台首页。</span>
     </div>
   </main>
 </body>

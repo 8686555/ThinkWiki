@@ -12,7 +12,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--demo-root",
         default="docs/demo-wiki",
-        help="Demo wiki root that contains output/index.html, output/viewer/index.html, and output/graph/index.html",
+        help="Demo wiki root that contains output/index.html plus the inbox, viewer, and graph HTML pages",
     )
     parser.add_argument(
         "--assets-dir",

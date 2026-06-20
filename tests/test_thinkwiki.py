@@ -389,6 +389,86 @@ class ThinkWikiRegressionTest(unittest.TestCase):
             self.assertIn("[a](../sources/a.md)", topic_text)
             self.assertIn("[b](../sources/b.md)", topic_text)
 
+    def test_clip_text_creates_inbox_item_and_next_step(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir) / "wiki"
+            run_script("init_wiki.py", "--root", str(root), "--title", "Test Wiki")
+
+            result = run_script(
+                "clip.py",
+                "--root",
+                str(root),
+                "--title",
+                "Inbox Note",
+                "--text",
+                "# Inbox Note\n\nThis is a clipped note for later ingest.",
+            )
+
+            inbox_files = sorted((root / "normalized" / "inbox").glob("*.md"))
+            self.assertEqual(len(inbox_files), 1)
+            inbox_text = inbox_files[0].read_text(encoding="utf-8")
+            self.assertIn("# Inbox Note", inbox_text)
+            self.assertIn("This is a clipped note for later ingest.", inbox_text)
+            self.assertIn("Clipped Inbox Note into inbox", result.stdout)
+            self.assertIn("Inbox normalized: normalized/inbox/", result.stdout)
+            self.assertIn("Inbox review: output/inbox/index.html", result.stdout)
+            self.assertIn("Output hub: output/index.html", result.stdout)
+            self.assertIn("Next: run `python scripts/thinkwiki ingest --root", result.stdout)
+            self.assertIn("normalized/inbox/", (root / "log.md").read_text(encoding="utf-8"))
+            self.assertTrue((root / "output" / "inbox" / "index.html").exists())
+            self.assertTrue((root / "output" / "index.html").exists())
+
+    def test_clip_refreshes_output_home_and_creates_missing_inbox_dirs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir) / "wiki"
+            write_text(root / ".wiki-schema.md", "# marker")
+            write_text(root / "index.md", "# Legacy Wiki")
+            (root / "output" / "viewer").mkdir(parents=True, exist_ok=True)
+            write_text(root / "output" / "viewer" / "index.html", "<html><body>viewer</body></html>")
+
+            result = run_script(
+                "clip.py",
+                "--root",
+                str(root),
+                "--title",
+                "Fresh Capture",
+                "--text",
+                "# Fresh Capture\n\nA clipped note for the inbox queue.",
+            )
+
+            self.assertTrue((root / "raw" / "inbox").exists())
+            self.assertTrue((root / "normalized" / "inbox").exists())
+            hub_html = (root / "output" / "index.html").read_text(encoding="utf-8")
+            inbox_html = (root / "output" / "inbox" / "index.html").read_text(encoding="utf-8")
+            self.assertIn("Inbox Queue", hub_html)
+            self.assertIn("Inbox Review", hub_html)
+            self.assertIn("Fresh Capture", hub_html)
+            self.assertIn("inbox/index.html", hub_html)
+            self.assertIn(">1</strong><span>Inbox</span>", hub_html)
+            self.assertIn("Next ingest command", inbox_html)
+            self.assertIn("python scripts/thinkwiki ingest --root", inbox_html)
+            self.assertIn("Fresh Capture", inbox_html)
+            self.assertIn("../normalized/inbox/", inbox_html)
+            self.assertIn("Inbox review: output/inbox/index.html", result.stdout)
+            self.assertIn("Output hub: output/index.html", result.stdout)
+            self.assertIn("Output hub URI: file://", result.stdout)
+
+    def test_build_inbox_command_creates_review_page(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir) / "wiki"
+            run_script("init_wiki.py", "--root", str(root), "--title", "Inbox Wiki")
+            write_text(root / "normalized" / "inbox" / "2026-06-20-team-note.md", "# Team Note\n\nReview this before ingest.")
+
+            result = run_script("build_inbox.py", "--root", str(root))
+
+            inbox_html = (root / "output" / "inbox" / "index.html").read_text(encoding="utf-8")
+            self.assertIn("ThinkWiki Inbox Review", inbox_html)
+            self.assertIn("Team Note", inbox_html)
+            self.assertIn("Review this before ingest.", inbox_html)
+            self.assertIn("python scripts/thinkwiki ingest --root", inbox_html)
+            self.assertIn("Inbox review: output/inbox/index.html", result.stdout)
+            self.assertIn("Output hub: output/index.html", result.stdout)
+
     def test_viewer_distinguishes_page_links_and_file_links(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir) / "wiki"

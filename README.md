@@ -17,7 +17,7 @@
 
 一句话理解：
 
-- `ThinkWiki = 本地 Markdown 知识库 + Agent Skill 原生入口 + 可直接打开的 Viewer / Graph 成果页`
+- `ThinkWiki = 本地 Markdown 知识库 + Agent Skill 原生入口 + 可直接打开的 Inbox / Viewer / Graph 成果页`
 
 ## 效果预览
 
@@ -48,6 +48,7 @@
 你可以直接对 Agent 这样说：
 
 - “帮我初始化一个知识库，名字叫 `My Wiki`”
+- “先把这个网页收进 inbox，稍后我再决定要不要正式入库：`https://example.com/article`”
 - “把这个 PDF 导入到知识库里：`/path/to/file.pdf`”
 - “把这个网页整理进知识库：`https://example.com/article`”
 - “基于当前知识库回答：AI 原生团队的核心定义是什么？”
@@ -58,6 +59,7 @@
 ## 它能做什么
 
 - 初始化本地 wiki 工作区
+- 先把网页、文件和临时文本采集到 `inbox`
 - 导入 Markdown、PDF、DOCX、XLSX、XLS、PPTX、网页和文本
 - 基于已有知识页做证据优先问答
 - 将高价值结果沉淀为 `query / synthesis / decision / concept`
@@ -106,6 +108,8 @@
 │   ├── syntheses/
 │   └── queries/
 ├── output/
+│   ├── inbox/
+│   │   └── index.html
 │   ├── graph/
 │   │   ├── graph.json
 │   │   ├── graph.md
@@ -126,6 +130,7 @@
 - `wiki/` 保存沉淀后的知识页面
 - `output/viewer/index.html` 是本地浏览页
 - `output/graph/index.html` 是本地知识图谱
+- `output/inbox/index.html` 是待处理采集内容的复核页
 - `output/index.html` 是统一知识工作台首页
 - 这些成果都可以直接在浏览器打开查看
 
@@ -192,6 +197,8 @@ cd ThinkWiki
 ```bash
 <python-command> scripts/thinkwiki bootstrap
 <python-command> scripts/thinkwiki init --root <wiki-root> --title "My Wiki"
+<python-command> scripts/thinkwiki clip --root <wiki-root> --url "https://example.com/article"
+<python-command> scripts/thinkwiki inbox --root <wiki-root>
 <python-command> scripts/thinkwiki ingest --root <wiki-root> --source <file.pdf>
 <python-command> scripts/thinkwiki ask --root <wiki-root> --question "AI原生团队的核心定义是什么？"
 <python-command> scripts/thinkwiki viewer --root <wiki-root>
@@ -201,6 +208,7 @@ cd ThinkWiki
 生成后可直接打开：
 
 - `output/index.html`
+- `output/inbox/index.html`
 - `output/viewer/index.html`
 - `output/graph/index.html`
 
@@ -216,6 +224,40 @@ cd ThinkWiki
 <python-command> scripts/thinkwiki ingest --root <wiki-root> --source <source-file>
 <python-command> scripts/thinkwiki ingest --root <wiki-root> --url "https://example.com/article"
 ```
+
+### 先采集到 Inbox，再决定是否入库
+
+```bash
+<python-command> scripts/thinkwiki clip --root <wiki-root> --source <source-file>
+<python-command> scripts/thinkwiki clip --root <wiki-root> --url "https://example.com/article"
+<python-command> scripts/thinkwiki clip --root <wiki-root> --title "Quick Note" --text "# Quick Note\n\nSomething worth saving."
+```
+
+`clip` 会把内容先放进：
+
+- `raw/inbox/`：保留原始文件、网页 HTML 或原始文本
+- `normalized/inbox/`：保存清洗后的 Markdown，方便后续复核和正式 ingest
+
+执行后，命令会直接打印下一步建议，例如：
+
+```bash
+python scripts/thinkwiki ingest --root <wiki-root> --source normalized/inbox/2026-06-20-quick-note.md
+```
+
+执行 `clip` 后，`ThinkWiki` 会自动更新 `output/inbox/index.html` 和 `output/index.html`，让工作台首页直接显示最新的 `Inbox Queue`。
+
+### 查看 Inbox Review 页面
+
+```bash
+<python-command> scripts/thinkwiki inbox --root <wiki-root>
+```
+
+这个命令会生成：
+
+- `output/inbox/index.html`：集中查看最近 clip 进来的条目
+- 每条条目都带有清洗后的 Markdown 打开入口
+- 每条条目都会直接显示下一步 `ingest` 命令，方便复制执行
+- 工作台首页 `output/index.html` 也会同步刷新
 
 ### 只做转换，不入库
 
@@ -305,11 +347,17 @@ export THINKWIKI_PIP_INDEX_URL="https://pypi.org/simple"
 对 Agent 来说，推荐默认流程是：
 
 1. 确定 wiki 根目录
-2. 用 `ingest` 导入资料
-3. 用 `ask` 做基于证据的回答
-4. 对高价值结果再调用 `query / digest / crystallize`
-5. 用 `viewer` 和 `graph` 生成可直接查看的成果页
-6. 定期运行 `lint` 和 `doctor`
+2. 先用 `clip` 或 `ingest` 导入资料
+3. 用 `inbox` 或 `output/index.html` 复核待处理采集内容
+4. 用 `ask` 做基于证据的回答
+5. 对高价值结果再调用 `query / digest / crystallize`
+6. 用 `viewer` 和 `graph` 生成可直接查看的成果页
+7. 定期运行 `lint` 和 `doctor`
+
+其中：
+
+- 如果资料还没确认是否值得正式沉淀，优先用 `clip` 先放进 `inbox`
+- 如果资料已经明确要入库，直接用 `ingest`
 
 ## 运行体检
 

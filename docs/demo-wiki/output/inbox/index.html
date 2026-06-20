@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ThinkWiki Inbox Review</title>
+  <style>
+    :root {
+      --bg: #0b1020;
+      --panel: #121935;
+      --text: #edf2ff;
+      --muted: #a8b3cf;
+      --border: rgba(255,255,255,0.1);
+      --accent: #8ab4ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: linear-gradient(180deg, #0b1020 0%, #10172f 100%);
+      color: var(--text);
+      padding: 24px;
+    }
+    .shell {
+      width: min(1100px, 100%);
+      margin: 0 auto;
+    }
+    .hero {
+      margin-bottom: 22px;
+      border: 1px solid var(--border);
+      background: rgba(9, 13, 28, 0.86);
+      border-radius: 24px;
+      padding: 28px;
+    }
+    .eyebrow {
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 0.82rem;
+      margin-bottom: 10px;
+    }
+    h1, h2, p { margin-top: 0; }
+    .lead {
+      color: var(--muted);
+      line-height: 1.6;
+      margin-bottom: 18px;
+      max-width: 70ch;
+    }
+    .badges {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .badge {
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 6px 12px;
+      color: var(--muted);
+      background: rgba(255,255,255,0.03);
+    }
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 14px;
+    }
+    .card {
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.03);
+      border-radius: 18px;
+      padding: 18px;
+    }
+    .meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      color: var(--muted);
+      font-size: 0.9rem;
+      margin-bottom: 10px;
+    }
+    .tag {
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .card p {
+      color: var(--muted);
+      line-height: 1.55;
+    }
+    .path {
+      margin: 14px 0;
+    }
+    .actions {
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    .command-label {
+      color: var(--muted);
+      font-size: 0.92rem;
+      margin-bottom: 8px;
+    }
+    pre {
+      margin: 0;
+      padding: 14px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: var(--panel);
+      color: var(--accent);
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    .empty {
+      border: 1px dashed var(--border);
+      border-radius: 18px;
+      padding: 18px;
+      color: var(--muted);
+      background: rgba(255,255,255,0.02);
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <div class="eyebrow">Inbox Review</div>
+      <h1>ThinkWiki Demo Wiki</h1>
+      <p class="lead">这里集中显示已经 clip 到 inbox、但还没有正式 ingest 的内容。你可以逐条复核清洗后的 Markdown，再直接复制下一步命令把它送进 wiki。</p>
+      <div class="badges">
+        <span class="badge">待处理条目 1</span>
+        <span class="badge"><a href="../index.html" target="_blank" rel="noopener">Open workspace home</a></span>
+      </div>
+    </section>
+    <section class="cards">
+      <article class='card'><div class='meta'><span class='tag'>inbox</span><span>2026-06-20 22:23</span></div><h2>Team Retrospective</h2><p>Collect this note in inbox first, then decide whether it should become a source page.</p><div class='path'><code>normalized/inbox/2026-06-20-team-retrospective.md</code></div><div class='actions'><a href='../../normalized/inbox/2026-06-20-team-retrospective.md' target='_blank' rel='noopener'>Open normalized note</a><a href='../index.html' target='_blank' rel='noopener'>Open workspace home</a></div><div class='command-label'>Next ingest command</div><pre>python scripts/thinkwiki ingest --root /Users/david/Desktop/ThinkWiki/docs/demo-wiki --source normalized/inbox/2026-06-20-team-retrospective.md</pre></article>
+    </section>
+  </main>
+</body>
+</html>
