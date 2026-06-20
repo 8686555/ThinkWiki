@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -12,9 +13,24 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
+def runtime_python() -> str:
+    candidates = [
+        REPO_ROOT / ".venv" / "bin" / "python3",
+        REPO_ROOT / ".venv" / "bin" / "python",
+        REPO_ROOT / ".venv" / "Scripts" / "python.exe",
+        REPO_ROOT / ".venv" / "Scripts" / "python",
+    ]
+    if os.name == "nt":
+        candidates = candidates[2:] + candidates[:2]
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+    return sys.executable
+
+
 def run_script(script_name: str, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [sys.executable, str(REPO_ROOT / "scripts" / script_name), *args],
+        [runtime_python(), str(REPO_ROOT / "scripts" / script_name), *args],
         cwd=REPO_ROOT,
         check=True,
         capture_output=True,
