@@ -1,9 +1,13 @@
 # Changelog
 
-## Unreleased
+## v1.1.0
 ### Added
 - Added `Graph Insights` to `output/graph/index.html` so the graph page now surfaces key pages, bridge pages, weakly connected pages, and suggested links.
 - Added structured graph insight data to `output/graph/graph.json` and `output/graph/graph.md` for downstream analysis and richer summaries.
+- Added graph-side interactions for insight-driven exploration, including clickable insight cards and suggested-link highlighting in the SVG graph.
+
+### Changed
+- Updated the graph explorer README copy and demo screenshot so the new insight panel is visible in the repository front page.
 
 ## v1.0.1
 ### Fixed
