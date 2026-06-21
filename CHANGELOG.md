@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.5.1
+### Changed
+- Updated `graph-report` terminal output to stay ASCII-safe across platforms, preventing Windows CI failures caused by console encoding when the report summary contains non-ASCII text.
+
 ## v1.5.0
 ### Added
 - Added a deterministic `health` command so users can check workspace structure, inbox consistency, and stale outputs without invoking heavier content workflows.

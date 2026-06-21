@@ -180,6 +180,41 @@ def _top_actions(report: dict[str, object]) -> list[str]:
     return actions[:4] or ["当前图谱结构总体稳定，可继续扩充高价值页面。"]
 
 
+def _console_summary(report: dict[str, object]) -> str:
+    stats = report["stats"]
+    assert isinstance(stats, dict)
+    return (
+        "pages={pages}, relations={relations}, isolatedPages={isolated}, weakPages={weak}, "
+        "hubStubs={hub_stubs}, fragileBridges={fragile}, isolatedClusters={clusters}, suggestedLinks={suggested}"
+    ).format(
+        pages=int(stats.get("nodeCount", 0) or 0),
+        relations=int(stats.get("edgeCount", 0) or 0),
+        isolated=int(stats.get("isolatedPageCount", 0) or 0),
+        weak=int(stats.get("weakPageCount", 0) or 0),
+        hub_stubs=int(stats.get("hubStubCount", 0) or 0),
+        fragile=int(stats.get("fragileBridgeCount", 0) or 0),
+        clusters=int(stats.get("isolatedClusterCount", 0) or 0),
+        suggested=int(stats.get("suggestedLinkCount", 0) or 0),
+    )
+
+
+def _console_actions(report: dict[str, object]) -> list[str]:
+    stats = report["stats"]
+    assert isinstance(stats, dict)
+    actions: list[str] = []
+    if int(stats.get("isolatedPageCount", 0) or 0):
+        actions.append("Fix isolated pages first by adding links or source references.")
+    if int(stats.get("hubStubCount", 0) or 0):
+        actions.append("Strengthen high-degree thin pages with better summaries and context.")
+    if int(stats.get("fragileBridgeCount", 0) or 0):
+        actions.append("Reinforce fragile bridge pages so cross-topic links do not rely on single points.")
+    if int(stats.get("isolatedClusterCount", 0) or 0):
+        actions.append("Reconnect isolated clusters back to the main graph.")
+    if int(stats.get("suggestedLinkCount", 0) or 0):
+        actions.append("Review suggested links and convert strong candidates into explicit page links.")
+    return actions[:4] or ["Graph structure looks stable. Continue expanding high-value pages."]
+
+
 def build_report(graph: dict[str, object]) -> dict[str, object]:
     nodes = graph.get("nodes", [])
     edges = graph.get("edges", [])
@@ -683,14 +718,14 @@ def main() -> int:
     print("# ThinkWiki Graph Report")
     print("")
     print(f"- Root: {root}")
-    print(f"- Summary: {report['summary']}")
+    print(f"- Summary: {_console_summary(report)}")
     print(f"- Isolated Pages: {report['stats']['isolatedPageCount']}")
     print(f"- Hub Stubs: {report['stats']['hubStubCount']}")
     print(f"- Fragile Bridges: {report['stats']['fragileBridgeCount']}")
     print(f"- Suggested Links: {report['stats']['suggestedLinkCount']}")
     print("")
     print("Top Actions:")
-    for item in report["topActions"]:
+    for item in _console_actions(report):
         print(f"- {item}")
     print("")
     print("Graph report: output/graph/report.html")
