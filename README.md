@@ -6,7 +6,7 @@
 
 `ThinkWiki` 是一个符合 Agent Skills 规范的本地 Markdown 知识库 skill。它帮助 Agent 持续整理、沉淀、查询和可视化你的知识库，而不是每次都从原始资料重新推导。
 
-它现在不只会生成浏览页和图谱页，还会在图谱中主动标出 `Key Pages`、`Bridge Pages`、`Pages That Need Links` 和 `Suggested Links`，让用户直接看到 wiki 结构里最值得继续整理的地方。
+它现在不只会生成浏览页和图谱页，还会生成确定性的 `graph-report`，把 `Key Pages`、`Bridge Pages`、`Pages That Need Links`、`Suggested Links`、`hub stubs` 和 `isolated clusters` 收敛成普通用户也能直接打开的治理结果。
 
 它适合这样的场景：
 
@@ -21,13 +21,14 @@
 
 ## 效果预览
 
-下面这四张样例图展示了 `ThinkWiki` 生成后的四个核心成果页：
+下面这五张样例图展示了 `ThinkWiki` 生成后的五个核心成果页：
 
 - 知识工作台首页：用户最容易直接打开的统一入口，也会展示当前 wiki 的页面规模、最近变化、图谱状态和下一步建议
 - Inbox Review 页：按 `ready / review / weak` 分组复核采集内容，并直接复制下一步 ingest 命令
 - 浏览页：适合按页面类型、状态、置信度浏览整个 wiki
 - 图谱页：适合查看页面之间的引用、包含和链接关系，也会直接给出图谱洞察和补链建议
-- 这四张图都来自仓库内 `docs/demo-wiki` 的真实输出，而不是手工绘制的示意图
+- 图谱治理报告页：适合直接查看孤立页面、脆弱桥接、孤立子图和 top graph fixes
+- 这五张图都来自仓库内 `docs/demo-wiki` 的真实输出，而不是手工绘制的示意图
 - 如需重新生成 README 截图，可执行：`python3 scripts/capture_readme_screenshots.py`
 
 ### 成果入口页样例
@@ -45,6 +46,10 @@
 ### 图谱页样例
 
 ![ThinkWiki Graph Preview](docs/assets/graph-preview.png)
+
+### 图谱治理报告页样例
+
+![ThinkWiki Graph Report Preview](docs/assets/graph-report-preview.png)
 
 ## 30 秒上手
 
@@ -118,6 +123,8 @@
 │   ├── graph/
 │   │   ├── graph.json
 │   │   ├── graph.md
+│   │   ├── report.json
+│   │   ├── report.md
 │   │   └── index.html
 │   ├── viewer/
 │       ├── viewer.json
@@ -135,6 +142,8 @@
 - `wiki/` 保存沉淀后的知识页面
 - `output/viewer/index.html` 是本地浏览页
 - `output/graph/index.html` 是本地知识图谱
+- `output/graph/report.html` 是图谱治理报告页
+- `output/graph/report.md` 是同一份报告的 Markdown 归档版本
 - `output/inbox/index.html` 是待处理采集内容的复核页
 - `output/index.html` 是统一知识工作台首页
 - 这些成果都可以直接在浏览器打开查看
@@ -204,10 +213,15 @@ cd ThinkWiki
 <python-command> scripts/thinkwiki init --root <wiki-root> --title "My Wiki"
 <python-command> scripts/thinkwiki clip --root <wiki-root> --url "https://example.com/article"
 <python-command> scripts/thinkwiki inbox --root <wiki-root>
+<python-command> scripts/thinkwiki batch-clip --root <wiki-root> --source-dir <import-dir> --dry-run
+<python-command> scripts/thinkwiki batch-ingest --root <wiki-root> --quality ready --dry-run
+<python-command> scripts/thinkwiki health --root <wiki-root>
+<python-command> scripts/thinkwiki status --root <wiki-root>
 <python-command> scripts/thinkwiki ingest --root <wiki-root> --source <file.pdf>
 <python-command> scripts/thinkwiki ask --root <wiki-root> --question "AI原生团队的核心定义是什么？"
 <python-command> scripts/thinkwiki viewer --root <wiki-root>
 <python-command> scripts/thinkwiki graph --root <wiki-root>
+<python-command> scripts/thinkwiki graph-report --root <wiki-root>
 ```
 
 生成后可直接打开：
@@ -216,6 +230,7 @@ cd ThinkWiki
 - `output/inbox/index.html`
 - `output/viewer/index.html`
 - `output/graph/index.html`
+- `output/graph/report.html`
 
 如果你只记一个入口，优先记住：
 
@@ -291,6 +306,24 @@ cd ThinkWiki
 - `always`：直接下载图片到 `normalized/assets/inbox/...`，并把 Markdown 引用改写成本地相对路径
 - `never`：保留远程图片链接，不做本地化
 
+### 检查当前工作区状态
+
+```bash
+<python-command> scripts/thinkwiki health --root <wiki-root>
+<python-command> scripts/thinkwiki status --root <wiki-root>
+<python-command> scripts/thinkwiki graph-report --root <wiki-root>
+```
+
+- `health`：做确定性检查，提示缺失目录、失效 inbox metadata、以及过期的 viewer / graph / inbox 输出
+- `status`：快速汇总页面数、inbox ready/review/weak 数量，以及当前成果页是否已生成
+- `graph-report`：基于现有 `output/graph/graph.json` 生成 `output/graph/report.{json,md,html}`，汇总孤立页面、脆弱桥接、孤立子图和建议补链
+
+生成 `graph-report` 之后：
+
+- `status` 会额外显示 `Graph Report` 的生成状态和核心计数
+- `health` 会提示 `graph-report` 是否缺失或过期
+- `output/index.html` 会直接显示图谱治理摘要和 top actions
+
 执行后，命令会直接打印下一步建议，例如：
 
 ```bash
@@ -298,6 +331,43 @@ python scripts/thinkwiki ingest --root <wiki-root> --source normalized/inbox/202
 ```
 
 执行 `clip` 后，`ThinkWiki` 会自动更新 `output/inbox/index.html` 和 `output/index.html`，让工作台首页直接显示最新的 `Inbox Queue`。
+
+### 批量采集到 Inbox
+
+```bash
+<python-command> scripts/thinkwiki batch-clip --root <wiki-root> --source-dir <import-dir> --dry-run
+<python-command> scripts/thinkwiki batch-clip --root <wiki-root> --source-dir <import-dir>
+<python-command> scripts/thinkwiki batch-clip --root <wiki-root> --manifest <clip-manifest.jsonl>
+```
+
+- `batch-clip` 适合把一个资料目录，或一组事先列好的 source / url / text 条目，一次性收进 inbox
+- `--source-dir` 会递归扫描目录中的受支持文件格式，并批量生成 `raw/inbox` 与 `normalized/inbox` 条目
+- `--manifest` 支持 JSON 数组或 JSONL，每条记录可提供一个 `source`、`url` 或 `text`，并可附带 `title`
+- manifest 中的网页条目还支持 `adapter`、`mode`、`waitSeconds` 和 `media`，直接复用单条 `clip` 的网页采集能力
+- `--dry-run` 会先列出本次准备采集的批次，确认后再正式执行
+- 执行完成后会自动刷新 `output/inbox/index.html` 和 `output/index.html`，并直接提示下一步 `batch-ingest --dry-run`
+
+一个最小 JSONL manifest 例子：
+
+```json
+{"source":"./docs/a.md","title":"Alpha Note"}
+{"url":"https://example.com/article","title":"Example Article","mode":"wait","waitSeconds":8}
+{"text":"# Quick Note\n\nSomething worth saving.","title":"Quick Note"}
+```
+
+### 批量处理 Ready Inbox
+
+```bash
+<python-command> scripts/thinkwiki batch-ingest --root <wiki-root> --quality ready --dry-run
+<python-command> scripts/thinkwiki batch-ingest --root <wiki-root> --quality ready
+<python-command> scripts/thinkwiki batch-ingest --root <wiki-root> --quality review --limit 3
+```
+
+- `batch-ingest` 默认优先处理 `ready` 条目，把 inbox 里的已复核内容批量正式入库
+- `--dry-run` 先列出将要处理的条目，不改动任何文件
+- `--limit` 适合先吃掉最上面的几条 ready 队列，而不是一次性清空
+- 正式执行后，会清理已处理条目的 `normalized/inbox`、对应 metadata、`raw/inbox` 原始文件，以及相关本地化媒体目录
+- 执行完成后会自动刷新 `output/inbox/index.html` 和 `output/index.html`，然后提示你重新生成 `viewer` / `graph`
 
 ### 查看 Inbox Review 页面
 
@@ -312,6 +382,7 @@ python scripts/thinkwiki ingest --root <wiki-root> --source normalized/inbox/202
 - 网页条目会显示 `adapter / source / author / publish date` 等结构化元数据
 - 网页条目会显示当前提取质量状态，并给出一条简短的复核建议
 - 网页条目支持直接打开 sidecar metadata JSON，方便复核提取质量
+- `ready` 分组会直接给出 `batch-ingest` 的 dry-run 和正式执行命令
 - 每条条目都会直接显示下一步 `ingest` 命令，方便复制执行
 - 工作台首页 `output/index.html` 也会同步刷新
 

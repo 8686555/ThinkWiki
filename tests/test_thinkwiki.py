@@ -42,6 +42,16 @@ def run_script(script_name: str, *args: str) -> subprocess.CompletedProcess[str]
     )
 
 
+def run_thinkwiki(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [runtime_python(), str(REPO_ROOT / "scripts" / "thinkwiki"), *args],
+        cwd=REPO_ROOT,
+        check=check,
+        capture_output=True,
+        text=True,
+    )
+
+
 def write_text(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(textwrap.dedent(content).strip() + "\n", encoding="utf-8")
@@ -87,6 +97,311 @@ def serve_handler(handler_class: type[http.server.BaseHTTPRequestHandler]):
 
 
 class ThinkWikiRegressionTest(unittest.TestCase):
+    def test_batch_clip_dry_run_lists_supported_directory_sources(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir) / "wiki"
+            import_dir = Path(tmp_dir) / "imports"
+            run_script("init_wiki.py", "--root", str(root), "--title", "Batch Clip Wiki")
+            write_text(import_dir / "alpha.md", "# Alpha\n\nAlpha note.")
+            write_text(import_dir / "nested" / "beta.txt", "Beta note.")
+            write_text(import_dir / "ignore.png", "not supported")
+
+            result = run_thinkwiki("batch-clip", "--root", str(root), "--source-dir", str(import_dir), "--dry-run")
+
+            self.assertIn("ThinkWiki Batch Clip", result.stdout)
+            self.assertIn("Input: source-dir", result.stdout)
+            self.assertIn("Matched Items: 2", result.stdout)
+            self.assertIn("alpha.md", result.stdout)
+            self.assertIn("beta.txt", result.stdout)
+            self.assertNotIn("ignore.png", result.stdout)
+            self.assertIn("Dry run complete. No files were changed.", result.stdout)
+            self.assertFalse(any((root / "normalized" / "inbox").glob("*.md")))
+
+    def test_batch_clip_manifest_clips_mixed_items_and_refreshes_outputs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir) / "wiki"
+            import_dir = Path(tmp_dir) / "imports"
+            site_root = Path(tmp_dir) / "site"
+            manifest = Path(tmp_dir) / "clip-manifest.jsonl"
+            run_script("init_wiki.py", "--root", str(root), "--title", "Batch Clip Wiki")
+            write_text(import_dir / "alpha.md", "# Alpha\n\nAlpha note from manifest.")
+            write_text(
+                site_root / "article.html",
+                """
+                <html>
+                  <head>
+                    <meta property="og:site_name" content="Manifest Blog">
+                    <meta name="author" content="Ada Lovelace">
+                    <meta property="article:published_time" content="2026-06-21">
+                  </head>
+                  <body>
+                    <main>
+                      <h1>Manifest Article</h1>
+                      <p>This article is long enough to be treated as a ready inbox capture during batch clip execution.</p>
+                    </main>
+                  </body>
+                </html>
+                """,
+            )
+
+            with serve_directory(site_root) as base_url:
+                write_text(
+                    manifest,
+                    f"""
+                    {{"source":"./imports/alpha.md","title":"Alpha Manifest"}}
+                    {{"url":"{base_url}/article.html","title":"Manifest Article","mode":"wait","waitSeconds":1}}
+                    {{"text":"# Quick Note\\n\\nSomething worth saving.","title":"Quick Note"}}
+                    """,
+                )
+                result = run_thinkwiki("batch-clip", "--root", str(root), "--manifest", str(manifest))
+
+            normalized_files = sorted((root / "normalized" / "inbox").glob("*.md"))
+            metadata_files = sorted((root / "normalized" / "inbox").glob("*.json"))
+            self.assertEqual(len(normalized_files), 3)
+            self.assertEqual(len(metadata_files), 1)
+            payload = json.loads(metadata_files[0].read_text(encoding="utf-8"))
+            self.assertEqual(payload["title"], "Manifest Article")
+            self.assertEqual(payload["siteName"], "Manifest Blog")
+            self.assertEqual(payload["author"], "Ada Lovelace")
+            self.assertEqual(payload["captureMode"], "wait")
+            self.assertIn("Matched Items: 3", result.stdout)
+            self.assertIn("Clipped: 3", result.stdout)
+            self.assertIn("Manifest Article", result.stdout)
+            self.assertIn("Quick Note", result.stdout)
+            self.assertIn("Inbox review: output/inbox/index.html", result.stdout)
+            self.assertIn("Output hub: output/index.html", result.stdout)
+            self.assertIn("batch-ingest --root", result.stdout)
+            self.assertTrue((root / "output" / "inbox" / "index.html").exists())
+            self.assertTrue((root / "output" / "index.html").exists())
+            log_text = (root / "log.md").read_text(encoding="utf-8")
+            self.assertIn("batch-clip | manifest", log_text)
+            self.assertIn("normalized/inbox/", log_text)
+
+    def test_batch_ingest_dry_run_only_lists_ready_items(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir) / "wiki"
+            run_script("init_wiki.py", "--root", str(root), "--title", "Batch Wiki")
+            write_text(
+                root / "normalized" / "inbox" / "2026-06-21-ready-item.md",
+                """
+                # Ready Item
+
+                This ready inbox item has enough body text to be safely promoted into the wiki during batch ingest.
+                """,
+            )
+            write_text(
+                root / "normalized" / "inbox" / "2026-06-21-ready-item.json",
+                json.dumps({
+                    "kind": "web",
+                    "adapter": "generic",
+                    "title": "Ready Item",
+                    "siteName": "Example Blog",
+                    "author": "Ada Lovelace",
+                    "publishDate": "2026-06-21",
+                    "url": "https://example.com/ready",
+                }, ensure_ascii=False, indent=2),
+            )
+            write_text(
+                root / "normalized" / "inbox" / "2026-06-21-weak-item.md",
+                """
+                # Weak Item
+
+                short
+                """,
+            )
+            write_text(
+                root / "normalized" / "inbox" / "2026-06-21-weak-item.json",
+                json.dumps({
+                    "kind": "web",
+                    "adapter": "generic",
+                    "title": "Weak Item",
+                    "url": "",
+                }, ensure_ascii=False, indent=2),
+            )
+
+            result = run_thinkwiki("batch-ingest", "--root", str(root), "--dry-run")
+
+            self.assertIn("ThinkWiki Batch Ingest", result.stdout)
+            self.assertIn("Quality Filter: ready", result.stdout)
+            self.assertIn("Matched Items: 1", result.stdout)
+            self.assertIn("Ready Item", result.stdout)
+            self.assertNotIn("Weak Item", result.stdout)
+            self.assertIn("Dry run complete. No files were changed.", result.stdout)
+            self.assertTrue((root / "normalized" / "inbox" / "2026-06-21-ready-item.md").exists())
+            self.assertFalse(any((root / "wiki" / "sources").glob("*.md")))
+
+    def test_batch_ingest_respects_limit_and_clears_processed_inbox_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir) / "wiki"
+            run_script("init_wiki.py", "--root", str(root), "--title", "Batch Wiki")
+
+            old_md = root / "normalized" / "inbox" / "2026-06-21-old-ready.md"
+            old_json = root / "normalized" / "inbox" / "2026-06-21-old-ready.json"
+            old_raw = root / "raw" / "inbox" / "2026-06-21-old-ready.html"
+            write_text(
+                old_md,
+                """
+                # Old Ready
+
+                This older ready inbox item should remain queued when batch ingest is limited to one item.
+                """,
+            )
+            write_text(
+                old_json,
+                json.dumps({
+                    "kind": "web",
+                    "adapter": "generic",
+                    "title": "Old Ready",
+                    "siteName": "Example Blog",
+                    "author": "Grace Hopper",
+                    "publishDate": "2026-06-21",
+                    "url": "https://example.com/old-ready",
+                }, ensure_ascii=False, indent=2),
+            )
+            write_text(old_raw, "<html><body>old ready</body></html>")
+
+            new_md = root / "normalized" / "inbox" / "2026-06-21-new-ready.md"
+            new_json = root / "normalized" / "inbox" / "2026-06-21-new-ready.json"
+            new_raw = root / "raw" / "inbox" / "2026-06-21-new-ready.html"
+            new_media_dir = root / "normalized" / "assets" / "inbox" / "2026-06-21-new-ready"
+            write_text(
+                new_md,
+                """
+                # New Ready
+
+                This newer ready inbox item has the richest metadata and should be the one batch ingest processes first.
+                """,
+            )
+            write_text(
+                new_json,
+                json.dumps({
+                    "kind": "web",
+                    "adapter": "generic",
+                    "title": "New Ready",
+                    "siteName": "Example Blog",
+                    "author": "Ada Lovelace",
+                    "publishDate": "2026-06-21",
+                    "url": "https://example.com/new-ready",
+                    "mediaDir": "normalized/assets/inbox/2026-06-21-new-ready",
+                }, ensure_ascii=False, indent=2),
+            )
+            write_text(new_raw, "<html><body>new ready</body></html>")
+            write_text(new_media_dir / "pixel.png", "image")
+
+            os.utime(old_md, (1000, 1000))
+            os.utime(old_json, (1000, 1000))
+            os.utime(old_raw, (1000, 1000))
+            os.utime(new_md, (2000, 2000))
+            os.utime(new_json, (2000, 2000))
+            os.utime(new_raw, (2000, 2000))
+
+            result = run_thinkwiki("batch-ingest", "--root", str(root), "--limit", "1")
+
+            self.assertIn("Ingested: 1", result.stdout)
+            self.assertIn("Cleared Inbox Artifacts: 4", result.stdout)
+            self.assertIn("New Ready -> wiki/sources/new-ready.md", result.stdout)
+            self.assertIn("Output hub: output/index.html", result.stdout)
+            self.assertIn("Next: run `python scripts/thinkwiki viewer --root", result.stdout)
+            self.assertTrue((root / "wiki" / "sources" / "new-ready.md").exists())
+            self.assertFalse(new_md.exists())
+            self.assertFalse(new_json.exists())
+            self.assertFalse(new_raw.exists())
+            self.assertFalse(new_media_dir.exists())
+            self.assertTrue(old_md.exists())
+            self.assertTrue(old_json.exists())
+            self.assertTrue(old_raw.exists())
+            self.assertTrue((root / "output" / "inbox" / "index.html").exists())
+            self.assertTrue((root / "output" / "index.html").exists())
+            log_text = (root / "log.md").read_text(encoding="utf-8")
+            self.assertIn("batch-ingest | quality=ready", log_text)
+            self.assertIn("wiki/sources/new-ready.md", log_text)
+
+    def test_health_passes_on_fresh_workspace(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir) / "wiki"
+            run_script("init_wiki.py", "--root", str(root), "--title", "Healthy Wiki")
+
+            result = run_script("health.py", "--root", str(root))
+
+            self.assertIn("ThinkWiki Health Report", result.stdout)
+            self.assertIn("- Errors: 0", result.stdout)
+            self.assertIn("- Warnings: 0", result.stdout)
+            self.assertIn("All checks passed", result.stdout)
+
+    def test_status_command_reports_workspace_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir) / "wiki"
+            run_script("init_wiki.py", "--root", str(root), "--title", "Status Wiki")
+            write_text(
+                root / "wiki" / "concepts" / "ai-native-team.md",
+                """
+                ---
+                title: AI Native Team
+                type: concept
+                created: 2026-06-21
+                updated: 2026-06-21
+                summary: A concept page used for status testing.
+                sources:
+                  - raw/articles/team-note.md
+                tags:
+                  - concept
+                confidence: high
+                status: active
+                ---
+
+                # AI Native Team
+
+                A concept page used for status testing.
+                """,
+            )
+            write_text(
+                root / "normalized" / "inbox" / "2026-06-21-captured-article.md",
+                """
+                # Captured Article
+
+                This article is complete enough to be treated as ready for ingest.
+                """,
+            )
+            write_text(
+                root / "normalized" / "inbox" / "2026-06-21-captured-article.json",
+                json.dumps({
+                    "kind": "web",
+                    "adapter": "generic",
+                    "title": "Captured Article",
+                    "siteName": "Example Blog",
+                    "author": "Ada Lovelace",
+                    "publishDate": "2026-06-21",
+                    "url": "https://example.com/article",
+                }, ensure_ascii=False, indent=2),
+            )
+
+            run_script("build_inbox.py", "--root", str(root))
+            run_script("build_viewer.py", "--root", str(root))
+            run_script("build_graph.py", "--root", str(root))
+
+            result = run_thinkwiki("status", "--root", str(root))
+
+            self.assertIn("ThinkWiki Status", result.stdout)
+            self.assertIn("Title: wiki", result.stdout)
+            self.assertIn("Pages: 1 (concept=1)", result.stdout)
+            self.assertIn("Inbox: total=1, ready=1, review=0, weak=0", result.stdout)
+            self.assertIn("Output Home: ready", result.stdout)
+            self.assertIn("Viewer: ready", result.stdout)
+            self.assertIn("Graph: ready", result.stdout)
+            self.assertIn("Inbox Review: ready", result.stdout)
+
+    def test_health_warns_on_invalid_inbox_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir) / "wiki"
+            run_script("init_wiki.py", "--root", str(root), "--title", "Warning Wiki")
+            write_text(root / "normalized" / "inbox" / "2026-06-21-bad.json", "{not-json")
+
+            result = run_script("health.py", "--root", str(root))
+
+            self.assertIn("- Errors: 0", result.stdout)
+            self.assertIn("- Warnings: 1", result.stdout)
+            self.assertIn("[invalid-inbox-metadata]", result.stdout)
+
     def test_init_reports_next_output_commands(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir) / "wiki"
@@ -337,6 +652,220 @@ class ThinkWikiRegressionTest(unittest.TestCase):
                 )
             )
 
+    def test_graph_report_integrates_with_status_health_and_home(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir) / "wiki"
+            run_script("init_wiki.py", "--root", str(root), "--title", "Graph Report Wiki")
+
+            write_text(
+                root / "wiki" / "sources" / "platform-spec.md",
+                """
+                ---
+                title: Platform Spec
+                type: source
+                created: 2026-06-21
+                updated: 2026-06-21
+                summary: Tiny.
+                sources:
+                  - raw/articles/platform.pdf
+                tags:
+                  - source
+                confidence: extracted
+                status: active
+                ---
+
+                # Platform Spec
+                """,
+            )
+            write_text(
+                root / "wiki" / "topics" / "platform.md",
+                """
+                ---
+                title: Platform
+                type: topic
+                created: 2026-06-21
+                updated: 2026-06-21
+                summary: Platform topic overview with enough context to connect to the core source.
+                sources:
+                  - wiki/sources/platform-spec.md
+                tags:
+                  - topic
+                confidence: mixed
+                status: active
+                ---
+
+                # Platform
+                """,
+            )
+            write_text(
+                root / "wiki" / "concepts" / "platform-principles.md",
+                """
+                ---
+                title: Platform Principles
+                type: concept
+                created: 2026-06-21
+                updated: 2026-06-21
+                summary: Platform principles explain how the platform should evolve and how teams should reuse the source material.
+                sources:
+                  - wiki/sources/platform-spec.md
+                tags:
+                  - concept
+                confidence: inferred
+                status: active
+                ---
+
+                # Platform Principles
+                """,
+            )
+            write_text(
+                root / "wiki" / "decisions" / "platform-decision.md",
+                """
+                ---
+                title: Platform Decision
+                type: decision
+                created: 2026-06-21
+                updated: 2026-06-21
+                summary: This decision records why the team keeps building around the platform source page.
+                sources:
+                  - wiki/sources/platform-spec.md
+                tags:
+                  - decision
+                confidence: high
+                status: active
+                ---
+
+                # Platform Decision
+                """,
+            )
+            write_text(
+                root / "wiki" / "queries" / "bridge-question.md",
+                """
+                ---
+                title: Bridge Question
+                type: query
+                created: 2026-06-21
+                updated: 2026-06-21
+                summary: This question connects the central source page with the platform principles page.
+                sources:
+                  - wiki/sources/platform-spec.md
+                tags:
+                  - query
+                confidence: mixed
+                status: active
+                ---
+
+                # Bridge Question
+
+                - [Platform Principles](../concepts/platform-principles.md)
+                """,
+            )
+            write_text(
+                root / "wiki" / "sources" / "cluster-spec.md",
+                """
+                ---
+                title: Cluster Spec
+                type: source
+                created: 2026-06-21
+                updated: 2026-06-21
+                summary: Cluster source summary.
+                sources:
+                  - raw/articles/cluster.pdf
+                tags:
+                  - source
+                confidence: extracted
+                status: active
+                ---
+
+                # Cluster Spec
+                """,
+            )
+            write_text(
+                root / "wiki" / "topics" / "cluster-topic.md",
+                """
+                ---
+                title: Cluster Topic
+                type: topic
+                created: 2026-06-21
+                updated: 2026-06-21
+                summary: This topic is intentionally disconnected from the main platform graph.
+                sources:
+                  - wiki/sources/cluster-spec.md
+                tags:
+                  - topic
+                confidence: mixed
+                status: active
+                ---
+
+                # Cluster Topic
+                """,
+            )
+            write_text(
+                root / "wiki" / "queries" / "orphan-question.md",
+                """
+                ---
+                title: Orphan Question
+                type: query
+                created: 2026-06-21
+                updated: 2026-06-21
+                summary: A page that still needs its first explicit relationship.
+                sources:
+                  - raw/articles/orphan.txt
+                tags:
+                  - query
+                confidence: low
+                status: draft
+                ---
+
+                # Orphan Question
+                """,
+            )
+
+            run_script("build_viewer.py", "--root", str(root))
+            run_script("build_graph.py", "--root", str(root))
+
+            result = run_thinkwiki("graph-report", "--root", str(root))
+
+            report_json_path = root / "output" / "graph" / "report.json"
+            report_md_path = root / "output" / "graph" / "report.md"
+            report_html_path = root / "output" / "graph" / "report.html"
+            self.assertTrue(report_json_path.exists())
+            self.assertTrue(report_md_path.exists())
+            self.assertTrue(report_html_path.exists())
+            report = json.loads(report_json_path.read_text(encoding="utf-8"))
+            stats = report["stats"]
+
+            self.assertIn("ThinkWiki Graph Report", result.stdout)
+            self.assertIn("Graph report: output/graph/report.html", result.stdout)
+            self.assertEqual(stats["isolatedPageCount"], 1)
+            self.assertEqual(stats["hubStubCount"], 1)
+            self.assertEqual(stats["isolatedClusterCount"], 1)
+            self.assertGreaterEqual(stats["fragileBridgeCount"], 1)
+            self.assertTrue(any("孤立页面" in item for item in report["topActions"]))
+
+            status_result = run_thinkwiki("status", "--root", str(root))
+            self.assertIn("Graph Report: ready", status_result.stdout)
+            self.assertIn("isolatedPages=1", status_result.stdout)
+            self.assertIn("hubStubs=1", status_result.stdout)
+            self.assertIn("clusters=1", status_result.stdout)
+
+            health_result = run_thinkwiki("health", "--root", str(root))
+            self.assertIn("Graph Report: ready, isolatedPages=1, hubStubs=1", health_result.stdout)
+            self.assertIn("- Errors: 0", health_result.stdout)
+            self.assertIn("- Warnings: 0", health_result.stdout)
+
+            hub_html = (root / "output" / "index.html").read_text(encoding="utf-8")
+            self.assertIn("图谱治理报告", hub_html)
+            self.assertIn("graph/report.html", hub_html)
+            self.assertIn("Hub Stubs 1 个", hub_html)
+            self.assertIn("Isolated Clusters 1 个", hub_html)
+            self.assertIn("优先处理孤立页面", hub_html)
+
+            report_html = report_html_path.read_text(encoding="utf-8")
+            self.assertIn("ThinkWiki Graph Report", report_html)
+            self.assertIn("Pages That Need Links", report_html)
+            self.assertIn("Hub Stubs", report_html)
+            self.assertIn("Open Workspace Home", report_html)
+
     def test_output_hub_shows_wiki_stats(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir) / "wiki"
@@ -501,6 +1030,18 @@ class ThinkWikiRegressionTest(unittest.TestCase):
             root = Path(tmp_dir) / "wiki"
             run_script("init_wiki.py", "--root", str(root), "--title", "Inbox Wiki")
             write_text(root / "normalized" / "inbox" / "2026-06-20-team-note.md", "# Team Note\n\nReview this before ingest.")
+            write_text(
+                root / "normalized" / "inbox" / "2026-06-20-team-note.json",
+                json.dumps({
+                    "kind": "web",
+                    "adapter": "generic",
+                    "title": "Team Note",
+                    "siteName": "Example Blog",
+                    "author": "Ada Lovelace",
+                    "publishDate": "2026-06-20",
+                    "url": "https://example.com/team-note",
+                }, ensure_ascii=False, indent=2),
+            )
 
             result = run_script("build_inbox.py", "--root", str(root))
 
@@ -508,6 +1049,7 @@ class ThinkWikiRegressionTest(unittest.TestCase):
             self.assertIn("ThinkWiki Inbox Review", inbox_html)
             self.assertIn("Priority Queue", inbox_html)
             self.assertIn("Ready To Ingest", inbox_html)
+            self.assertIn("python scripts/thinkwiki batch-ingest --root", inbox_html)
             self.assertIn("Team Note", inbox_html)
             self.assertIn("Review this before ingest.", inbox_html)
             self.assertIn("python scripts/thinkwiki ingest --root", inbox_html)

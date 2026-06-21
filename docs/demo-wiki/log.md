@@ -14,3 +14,19 @@
 - summary: output/graph/graph.md
 - viewer: output/graph/index.html
 - hub: output/index.html
+
+## [2026-06-21] graph-report | 11 pages
+- report html: output/graph/report.html
+- report: output/graph/report.md
+- data: output/graph/report.json
+- hub: output/index.html
+
+## [2026-06-21] inbox | review page
+- review: output/inbox/index.html
+- hub: output/index.html
+
+## [2026-06-21] graph-report | 11 pages
+- report html: output/graph/report.html
+- report: output/graph/report.md
+- data: output/graph/report.json
+- hub: output/index.html

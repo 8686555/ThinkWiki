@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ThinkWiki Graph Report</title>
+  <style>
+    :root {
+      --bg: #0b1020;
+      --panel: #121935;
+      --text: #edf2ff;
+      --muted: #a8b3cf;
+      --border: rgba(255,255,255,0.1);
+      --accent: #8ab4ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: linear-gradient(180deg, #0b1020 0%, #10172f 100%);
+      color: var(--text);
+      padding: 24px;
+    }
+    .shell {
+      width: min(1180px, 100%);
+      margin: 0 auto;
+      background: rgba(9, 13, 28, 0.86);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 28px;
+    }
+    h1, h2, p { margin-top: 0; }
+    .lead {
+      color: var(--muted);
+      line-height: 1.6;
+    }
+    .meta {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin: 16px 0 24px;
+    }
+    .badge {
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 6px 12px;
+      color: var(--muted);
+      background: rgba(255,255,255,0.03);
+      font-size: 0.92rem;
+    }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 12px;
+      margin: 24px 0;
+    }
+    .stat {
+      border: 1px solid var(--border);
+      background: var(--panel);
+      border-radius: 18px;
+      padding: 16px;
+    }
+    .stat strong {
+      display: block;
+      font-size: 1.4rem;
+      margin-bottom: 6px;
+    }
+    .stat span {
+      color: var(--muted);
+    }
+    .layout {
+      display: grid;
+      gap: 14px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      margin-top: 18px;
+    }
+    .panel {
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.02);
+      border-radius: 18px;
+      padding: 18px;
+    }
+    .panel p {
+      color: var(--muted);
+      line-height: 1.55;
+    }
+    .bullet-list {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+      display: grid;
+      gap: 10px;
+      line-height: 1.5;
+    }
+    .records {
+      display: grid;
+      gap: 10px;
+    }
+    .record-card {
+      border: 1px solid var(--border);
+      background: var(--panel);
+      border-radius: 16px;
+      padding: 14px;
+    }
+    .record-card strong {
+      display: block;
+      margin-bottom: 6px;
+    }
+    .record-meta {
+      color: var(--accent);
+      font-size: 0.88rem;
+      margin-bottom: 8px;
+    }
+    .record-card p {
+      margin-bottom: 0;
+    }
+    .empty {
+      border: 1px dashed var(--border);
+      border-radius: 16px;
+      padding: 14px;
+      color: var(--muted);
+    }
+    a {
+      color: var(--accent);
+    }
+    @media (max-width: 860px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <h1>ThinkWiki Graph Report</h1>
+    <p class="lead">当前关键页面是 AI Native Team。 主要页面已经形成基础连接。 有 1 个高连接薄内容页面值得优先补强。 当前可复核 8 条建议补链。</p>
+    <div class="meta">
+      <span class="badge">Generated 2026-06-21</span>
+      <span class="badge">Pages 11</span>
+      <span class="badge">Relations 41</span>
+      <span class="badge"><a href="index.html">Open Graph</a></span>
+      <span class="badge"><a href="../index.html">Open Workspace Home</a></span>
+    </div>
+
+    <section>
+      <h2>Health Summary</h2>
+      <div class="stats">
+        <div class='stat'><strong>11</strong><span>Pages</span></div>
+<div class='stat'><strong>41</strong><span>Relations</span></div>
+<div class='stat'><strong>7.45</strong><span>Average Degree</span></div>
+<div class='stat'><strong>0</strong><span>Isolated Pages</span></div>
+<div class='stat'><strong>0</strong><span>Weak Pages</span></div>
+<div class='stat'><strong>5</strong><span>Bridge Pages</span></div>
+<div class='stat'><strong>8</strong><span>Suggested Links</span></div>
+<div class='stat'><strong>1</strong><span>Hub Stubs</span></div>
+<div class='stat'><strong>0</strong><span>Fragile Bridges</span></div>
+<div class='stat'><strong>0</strong><span>Isolated Clusters</span></div>
+      </div>
+    </section>
+
+    <div class="layout">
+      <section class="panel">
+        <h2>Top Actions</h2>
+        <p>先处理最影响导航性和可维护性的图谱问题。</p>
+        <ul class='bullet-list'><li>检查高连接但内容薄弱的页面，补摘要、上下文和来源。</li><li>复核建议补链，把高置信度关系转成显式页面链接。</li></ul>
+      </section>
+      <section class="panel">
+        <h2>Key Pages</h2>
+        <p>优先阅读或补强这些页面，它们对当前图谱结构最关键。</p>
+        <div class="records"><div class='record-card'><strong>AI Native Team</strong><div class='record-meta'>concept | score=70</div><p>总关系 14，入边 7，覆盖 6 种邻居类型</p></div>
+<div class='record-card'><strong>Eval Loop Notes</strong><div class='record-meta'>source | score=51</div><p>总关系 9，入边 6，覆盖 4 种邻居类型</p></div>
+<div class='record-card'><strong>Execution Spec</strong><div class='record-meta'>concept | score=50</div><p>总关系 10，入边 5，覆盖 4 种邻居类型</p></div>
+<div class='record-card'><strong>Platform Spec</strong><div class='record-meta'>source | score=49</div><p>总关系 9，入边 5，覆盖 4 种邻居类型</p></div>
+<div class='record-card'><strong>Execution Policy</strong><div class='record-meta'>decision | score=46</div><p>总关系 8，入边 6，覆盖 4 种邻居类型</p></div>
+<div class='record-card'><strong>Eval Loops</strong><div class='record-meta'>topic | score=39</div><p>总关系 8，入边 3，覆盖 3 种邻居类型</p></div></div>
+      </section>
+      <section class="panel">
+        <h2>Bridge Pages</h2>
+        <p>这些页面连接了不同类型或不同主题的区域。</p>
+        <div class="records"><div class='record-card'><strong>AI Native Team</strong><div class='record-meta'>concept | score=35</div><p>连接了 6 种页面类型，适合作为结构桥梁</p></div>
+<div class='record-card'><strong>Eval Loop Notes</strong><div class='record-meta'>source | score=28</div><p>连接了 4 种页面类型，适合作为结构桥梁</p></div>
+<div class='record-card'><strong>Platform Spec</strong><div class='record-meta'>source | score=28</div><p>连接了 4 种页面类型，适合作为结构桥梁</p></div>
+<div class='record-card'><strong>Execution Spec</strong><div class='record-meta'>concept | score=25</div><p>连接了 4 种页面类型，适合作为结构桥梁</p></div>
+<div class='record-card'><strong>Review Checklist</strong><div class='record-meta'>source | score=25</div><p>连接了 4 种页面类型，适合作为结构桥梁</p></div></div>
+      </section>
+      <section class="panel">
+        <h2>Pages That Need Links</h2>
+        <p>这里展示孤立页面和弱连接页面，适合优先补链。</p>
+        <div class="records"><div class='empty'>No isolated or weak pages.</div></div>
+      </section>
+      <section class="panel">
+        <h2>Hub Stubs</h2>
+        <p>关系很多但内容偏薄的页面，补摘要和上下文通常收益最高。</p>
+        <div class="records"><div class='record-card'><strong>Model Platform</strong><div class='record-meta'>topic | degree=8</div><p>关系数 8 较高，但摘要只有 76 个字符</p></div></div>
+      </section>
+      <section class="panel">
+        <h2>Fragile Bridges</h2>
+        <p>只靠少量页面维持跨主题连接的结构点，容易成为单点脆弱处。</p>
+        <div class="records"><div class='empty'>No fragile bridges.</div></div>
+      </section>
+      <section class="panel">
+        <h2>Isolated Clusters</h2>
+        <p>这些页面已经形成小片区，但还没有接回主图。</p>
+        <div class="records"><div class='empty'>No isolated clusters.</div></div>
+      </section>
+      <section class="panel">
+        <h2>Suggested Links</h2>
+        <p>高置信度的候选关系，适合人工复核后转成显式链接。</p>
+        <div class="records"><div class='record-card'><strong>wiki/decisions/context-budget.md &lt;-&gt; wiki/decisions/execution-policy.md</strong><div class='record-meta'>suggested link | score=17</div><p>High-confidence structural suggestion.</p></div>
+<div class='record-card'><strong>wiki/topics/eval-loops.md &lt;-&gt; wiki/topics/model-platform.md</strong><div class='record-meta'>suggested link | score=17</div><p>High-confidence structural suggestion.</p></div>
+<div class='record-card'><strong>wiki/syntheses/delivery-system.md &lt;-&gt; wiki/topics/model-platform.md</strong><div class='record-meta'>suggested link | score=13</div><p>High-confidence structural suggestion.</p></div>
+<div class='record-card'><strong>wiki/queries/what-makes-ai-native-team.md &lt;-&gt; wiki/syntheses/delivery-system.md</strong><div class='record-meta'>suggested link | score=13</div><p>High-confidence structural suggestion.</p></div>
+<div class='record-card'><strong>wiki/decisions/context-budget.md &lt;-&gt; wiki/syntheses/delivery-system.md</strong><div class='record-meta'>suggested link | score=12</div><p>High-confidence structural suggestion.</p></div>
+<div class='record-card'><strong>wiki/decisions/context-budget.md &lt;-&gt; wiki/topics/model-platform.md</strong><div class='record-meta'>suggested link | score=12</div><p>High-confidence structural suggestion.</p></div>
+<div class='record-card'><strong>wiki/syntheses/delivery-system.md &lt;-&gt; wiki/topics/eval-loops.md</strong><div class='record-meta'>suggested link | score=12</div><p>High-confidence structural suggestion.</p></div>
+<div class='record-card'><strong>wiki/decisions/execution-policy.md &lt;-&gt; wiki/sources/platform-spec.md</strong><div class='record-meta'>suggested link | score=10</div><p>High-confidence structural suggestion.</p></div></div>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

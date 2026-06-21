@@ -12,7 +12,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--demo-root",
         default="docs/demo-wiki",
-        help="Demo wiki root that contains output/index.html plus the inbox, viewer, and graph HTML pages",
+        help="Demo wiki root that contains output/index.html plus the inbox, viewer, graph, and graph-report HTML pages",
     )
     parser.add_argument(
         "--assets-dir",
@@ -44,6 +44,11 @@ def screenshot_specs(repo_root: Path, demo_root: Path, assets_dir: Path) -> list
             "url": (demo_output / "graph" / "index.html").as_uri(),
             "output": (repo_root / assets_dir / "graph-preview.png").resolve(),
             "viewport": {"width": 1600, "height": 1080},
+        },
+        {
+            "url": (demo_output / "graph" / "report.html").as_uri(),
+            "output": (repo_root / assets_dir / "graph-report-preview.png").resolve(),
+            "viewport": {"width": 1440, "height": 1500},
         },
     ]
 

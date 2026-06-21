@@ -17,6 +17,8 @@ COMMAND_TO_SCRIPT = {
     "init": "init_wiki.py",
     "clip": "clip.py",
     "inbox": "build_inbox.py",
+    "batch-clip": "batch_clip.py",
+    "batch-ingest": "batch_ingest.py",
     "convert": "convert_source.py",
     "ingest": "ingest.py",
     "ask": "ask.py",
@@ -27,7 +29,10 @@ COMMAND_TO_SCRIPT = {
     "rebuild-index": "rebuild_index.py",
     "lint": "lint_wiki.py",
     "graph": "build_graph.py",
+    "graph-report": "graph_report.py",
     "viewer": "build_viewer.py",
+    "health": "health.py",
+    "status": "status.py",
     "doctor": "doctor.py",
 }
 
@@ -45,6 +50,8 @@ Commands:
   init            -> init_wiki.py
   clip            -> clip.py
   inbox           -> build_inbox.py
+  batch-clip      -> batch_clip.py
+  batch-ingest    -> batch_ingest.py
   convert         -> convert_source.py
   ingest          -> ingest.py
   ask             -> ask.py
@@ -55,7 +62,10 @@ Commands:
   rebuild-index   -> rebuild_index.py
   lint            -> lint_wiki.py
   graph           -> build_graph.py
+  graph-report    -> graph_report.py
   viewer          -> build_viewer.py
+  health          -> health.py
+  status          -> status.py
   doctor          -> doctor.py
 
 Examples:
@@ -63,6 +73,11 @@ Examples:
   python scripts/thinkwiki init --root /path/to/my-wiki --title "My Wiki"
   python scripts/thinkwiki clip --root /path/to/my-wiki --url "https://example.com/article"
   python scripts/thinkwiki inbox --root /path/to/my-wiki
+  python scripts/thinkwiki batch-clip --root /path/to/my-wiki --source-dir /path/to/imports --dry-run
+  python scripts/thinkwiki batch-ingest --root /path/to/my-wiki --quality ready --dry-run
+  python scripts/thinkwiki graph-report --root /path/to/my-wiki
+  python scripts/thinkwiki health --root /path/to/my-wiki
+  python scripts/thinkwiki status --root /path/to/my-wiki
   python scripts/thinkwiki convert --source /path/to/file.pdf --output-file /path/to/file.md
   python scripts/thinkwiki ingest --root /path/to/my-wiki --source /path/to/file.md --topic "AI Memory"
   python scripts/thinkwiki ask --root /path/to/my-wiki --question "What did we already conclude about AI memory?"

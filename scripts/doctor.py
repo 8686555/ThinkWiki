@@ -17,6 +17,8 @@ ROOT_REQUIRED_SCRIPTS = [
     "scripts/bootstrap_runtime.py",
     "scripts/init_wiki.py",
     "scripts/convert_source.py",
+    "scripts/batch_clip.py",
+    "scripts/batch_ingest.py",
     "scripts/ingest.py",
     "scripts/ask.py",
     "scripts/correct.py",
@@ -26,9 +28,13 @@ ROOT_REQUIRED_SCRIPTS = [
     "scripts/rebuild_index.py",
     "scripts/lint_wiki.py",
     "scripts/build_graph.py",
+    "scripts/graph_report.py",
     "scripts/build_viewer.py",
+    "scripts/health.py",
+    "scripts/status.py",
     "scripts/doctor.py",
     "scripts/runtime_capabilities.py",
+    "scripts/workspace_status.py",
     "scripts/utils.py",
 ]
 ROOT_REQUIRED_TEMPLATES = [

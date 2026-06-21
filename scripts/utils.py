@@ -159,6 +159,17 @@ def file_uri(path: Path) -> str:
     return path.resolve().as_uri()
 
 
+def display_root_arg(root: Path) -> str:
+    repo_root = repo_root_from_script()
+    demo_root = (repo_root / "docs" / "demo-wiki").resolve()
+    try:
+        if root.resolve() == demo_root:
+            return "<wiki-root>"
+    except OSError:
+        pass
+    return str(root)
+
+
 def _load_json(path: Path) -> dict:
     if not path.exists():
         return {}
@@ -296,7 +307,7 @@ def collect_inbox_items(root: Path) -> list[dict]:
             "updated": updated,
             "path": repo_path,
             "href": Path(os.path.relpath(path, start=root / "output")).as_posix(),
-            "ingest_command": f"python scripts/thinkwiki ingest --root {root} --source {repo_path}",
+            "ingest_command": f"python scripts/thinkwiki ingest --root {display_root_arg(root)} --source {repo_path}",
             "kind": str(sidecar.get("kind", "") or ""),
             "adapter": str(sidecar.get("adapter", "") or ""),
             "site_name": str(sidecar.get("siteName", "") or ""),
@@ -320,6 +331,15 @@ def collect_inbox_items(root: Path) -> list[dict]:
             "quality_reason": quality_reason,
         })
     return items
+
+
+def batch_ingest_command(root: Path, quality: str = "ready", limit: int | None = None, dry_run: bool = False) -> str:
+    command = f"python scripts/thinkwiki batch-ingest --root {display_root_arg(root)} --quality {quality}"
+    if limit is not None and limit > 0:
+        command += f" --limit {limit}"
+    if dry_run:
+        command += " --dry-run"
+    return command
 
 
 def _inbox_groups(items: list[dict]) -> dict[str, list[dict]]:
@@ -600,6 +620,12 @@ def _render_inbox_review_section(
 ) -> str:
     cards_html = _render_inbox_review_cards(items, inbox_dir, root) if items else "<div class='empty'>{}</div>".format(escape(empty_text))
     commands = [str(item.get("ingest_command", "") or "") for item in items[:3] if str(item.get("ingest_command", "") or "")]
+    if anchor == "ready" and items:
+        commands = [
+            batch_ingest_command(root, quality="ready", dry_run=True),
+            batch_ingest_command(root, quality="ready"),
+            *commands,
+        ]
     command_html = _render_command_list(commands, "当前分组还没有推荐命令。")
     return (
         "<section class='group' id='{anchor}'>"
@@ -645,7 +671,7 @@ def _featured_pages(pages: list[dict], limit: int = 4) -> list[dict]:
     return sorted(featured, key=_page_sort_key, reverse=True)[:limit]
 
 
-def _attention_items(pages: list[dict], graph_insights: dict) -> list[str]:
+def _attention_items(pages: list[dict], graph_insights: dict, graph_report: dict) -> list[str]:
     items: list[str] = []
     isolated_nodes = graph_insights.get("isolatedNodes", []) if isinstance(graph_insights, dict) else []
     weak_pages = [item for item in isolated_nodes if str(item.get("severity", "")) == "weak"]
@@ -654,6 +680,17 @@ def _attention_items(pages: list[dict], graph_insights: dict) -> list[str]:
         items.append("当前有 <strong>{}</strong> 个孤立页面，建议优先补链接或补来源。".format(len(isolated_pages)))
     if weak_pages:
         items.append("当前有 <strong>{}</strong> 个弱连接页面，适合继续整理上下文。".format(len(weak_pages)))
+
+    report_stats = graph_report.get("stats", {}) if isinstance(graph_report.get("stats"), dict) else {}
+    hub_stubs = int(report_stats.get("hubStubCount", 0) or 0)
+    fragile_bridges = int(report_stats.get("fragileBridgeCount", 0) or 0)
+    isolated_clusters = int(report_stats.get("isolatedClusterCount", 0) or 0)
+    if hub_stubs:
+        items.append("有 <strong>{}</strong> 个高连接薄内容页面，建议优先补摘要和上下文。".format(hub_stubs))
+    if fragile_bridges:
+        items.append("有 <strong>{}</strong> 个脆弱桥接页面，建议补强主题之间的连接。".format(fragile_bridges))
+    if isolated_clusters:
+        items.append("当前存在 <strong>{}</strong> 个脱离主图的页面簇，建议尽快接回主图。".format(isolated_clusters))
 
     missing_summary = [
         page for page in pages
@@ -677,6 +714,8 @@ def _recommended_actions(
     viewer_exists: bool,
     graph_exists: bool,
     graph_insights: dict,
+    graph_report: dict,
+    graph_report_exists: bool,
     recent_pages: list[dict],
     inbox_page_exists: bool,
     inbox_count: int,
@@ -712,6 +751,14 @@ def _recommended_actions(
             "title": "打开知识图谱",
             "summary": summary,
             "href": "graph/index.html",
+        })
+    if graph_report_exists:
+        report_actions = graph_report.get("topActions", []) if isinstance(graph_report.get("topActions"), list) else []
+        actions.append({
+            "label": "Govern",
+            "title": "查看图谱治理报告",
+            "summary": str(report_actions[0]) if report_actions else "查看孤立页面、脆弱桥接和建议补链的治理摘要。",
+            "href": "graph/report.html",
         })
 
     stats = graph_insights.get("stats", {}) if isinstance(graph_insights, dict) else {}
@@ -757,11 +804,18 @@ def write_output_home(root: Path) -> Path:
     output_dir = root / "output"
     viewer_path = output_dir / "viewer" / "index.html"
     graph_path = output_dir / "graph" / "index.html"
+    graph_report_path = output_dir / "graph" / "report.html"
     inbox_path = output_dir / "inbox" / "index.html"
     viewer_data = _load_json(output_dir / "viewer" / "viewer.json")
     graph_data = _load_json(output_dir / "graph" / "graph.json")
+    graph_report = _load_json(output_dir / "graph" / "report.json")
     wiki_title = _first_markdown_heading(root / "index.md") or root.name
-    generated_at = str(viewer_data.get("generatedAt") or graph_data.get("generated_at") or today_str())
+    generated_at = str(
+        graph_report.get("generated_at")
+        or viewer_data.get("generatedAt")
+        or graph_data.get("generated_at")
+        or today_str()
+    )
     page_count = int(viewer_data.get("pageCount", 0) or 0)
     node_count = len(graph_data.get("nodes", [])) if isinstance(graph_data.get("nodes"), list) else 0
     edge_count = len(graph_data.get("edges", [])) if isinstance(graph_data.get("edges"), list) else 0
@@ -775,15 +829,17 @@ def write_output_home(root: Path) -> Path:
     recent_pages = _recent_pages(pages)
     generated_pages = _generated_pages(pages)
     featured_pages = _featured_pages(pages)
-    attention_items = _attention_items(pages, graph_insights)
+    attention_items = _attention_items(pages, graph_insights, graph_report)
     graph_summary = str(graph_insights.get("summary", "") or "").strip()
     graph_stats = graph_insights.get("stats", {}) if isinstance(graph_insights, dict) else {}
+    graph_report_stats = graph_report.get("stats", {}) if isinstance(graph_report.get("stats"), dict) else {}
     key_pages = graph_insights.get("topNodes", []) if isinstance(graph_insights.get("topNodes"), list) else []
     output_items: list[str] = []
     for title, path, summary in [
         ("Inbox Review", inbox_path, "查看待处理 inbox 条目，并复制下一步 ingest 命令"),
         ("本地浏览页", viewer_path, "按页面类型、置信度和状态浏览整个 wiki"),
         ("知识图谱", graph_path, "查看页面之间的引用、包含、关键页面和建议补链"),
+        ("图谱治理报告", graph_report_path, "查看孤立页面、脆弱桥接、孤立子图和治理建议"),
     ]:
         if not path.exists():
             continue
@@ -827,6 +883,8 @@ def write_output_home(root: Path) -> Path:
             viewer_exists=viewer_path.exists(),
             graph_exists=graph_path.exists(),
             graph_insights=graph_insights,
+            graph_report=graph_report,
+            graph_report_exists=graph_report_path.exists(),
             recent_pages=recent_pages,
             inbox_page_exists=inbox_path.exists(),
             inbox_count=inbox_count,
@@ -836,7 +894,10 @@ def write_output_home(root: Path) -> Path:
     )
     inbox_html = _render_inbox_list(inbox_items, "还没有待处理的 inbox 条目。你可以先运行 clip 采集网页、文本或文件。")
     graph_snapshot_items: list[str] = []
-    if graph_summary:
+    report_summary = str(graph_report.get("summary", "") or "").strip()
+    if report_summary:
+        graph_snapshot_items.append("<div class='snapshot-copy'>{}</div>".format(escape(report_summary)))
+    elif graph_summary:
         graph_snapshot_items.append("<div class='snapshot-copy'>{}</div>".format(escape(graph_summary)))
     if key_pages:
         graph_snapshot_items.append(
@@ -845,13 +906,28 @@ def write_output_home(root: Path) -> Path:
             )
         )
     suggested_count = len(graph_insights.get("suggestedLinks", [])) if isinstance(graph_insights.get("suggestedLinks"), list) else 0
+    hub_stub_count = int(graph_report_stats.get("hubStubCount", 0) or 0)
+    fragile_bridge_count = int(graph_report_stats.get("fragileBridgeCount", 0) or 0)
+    isolated_cluster_count = int(graph_report_stats.get("isolatedClusterCount", 0) or 0)
     graph_snapshot_items.append(
         "<div class='snapshot-chip'>孤立页面 {isolated} 个</div>"
-        "<div class='snapshot-chip'>建议补链 {links} 条</div>".format(
-            isolated=escape(str(int(graph_stats.get("isolatedCount", 0) or 0))),
+        "<div class='snapshot-chip'>建议补链 {links} 条</div>"
+        "<div class='snapshot-chip'>Hub Stubs {hub_stubs} 个</div>"
+        "<div class='snapshot-chip'>Fragile Bridges {fragile} 个</div>"
+        "<div class='snapshot-chip'>Isolated Clusters {clusters} 个</div>".format(
+            isolated=escape(str(int(graph_report_stats.get("isolatedPageCount", graph_stats.get("isolatedCount", 0)) or 0))),
             links=escape(str(suggested_count)),
+            hub_stubs=escape(str(hub_stub_count)),
+            fragile=escape(str(fragile_bridge_count)),
+            clusters=escape(str(isolated_cluster_count)),
         )
     )
+    report_actions = graph_report.get("topActions", []) if isinstance(graph_report.get("topActions"), list) else []
+    if report_actions:
+        graph_snapshot_items.append(_render_bullet_list(
+            [escape(str(item)) for item in report_actions[:3]],
+            "当前没有额外治理动作。",
+        ))
     graph_snapshot_html = "\n".join(graph_snapshot_items) if graph_snapshot_items else "<div class='empty small'>图谱洞察将在生成 graph 后显示。</div>"
 
     html = """<!DOCTYPE html>

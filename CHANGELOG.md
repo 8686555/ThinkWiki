@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.5.0
+### Added
+- Added a deterministic `health` command so users can check workspace structure, inbox consistency, and stale outputs without invoking heavier content workflows.
+- Added a compact `status` command so users can quickly inspect page counts, inbox readiness, and the current viewer/graph/inbox output state from the terminal.
+- Added a `batch-clip` command so users can collect a whole directory or a manifest of `source / url / text` items into the inbox in one run.
+- Added a `batch-ingest` command so users can promote `ready` inbox items into the wiki in batches, with `--dry-run`, `--limit`, and quality-based filtering.
+- Added a deterministic `graph-report` command so users can turn the current graph into a governance report with isolated pages, hub stubs, fragile bridges, isolated clusters, and top graph fixes.
+
+### Changed
+- Updated `output/inbox/index.html` so the `Ready To Ingest` section now recommends `batch-ingest` dry-run and execution commands before the per-item ingest commands.
+- Updated `status`, `health`, and `output/index.html` so the new graph governance report is surfaced in terminal summaries and the HTML workspace home.
+- Updated `graph-report` to also write `output/graph/report.html`, making the governance report directly browsable like the rest of ThinkWiki outputs.
+- Updated demo generation and committed demo outputs so repository-facing pages no longer expose local absolute paths, and removed internal competitive research notes from `docs/`.
+
 ## v1.4.0
 ### Added
 - Added structured sidecar metadata for web clips in `normalized/inbox/*.json`, including adapter, site name, author, publish date, and source URL.

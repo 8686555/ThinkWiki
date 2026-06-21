@@ -411,7 +411,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Build the demo wiki used for README screenshots.")
     parser.add_argument(
         "--root",
-        default="/Users/david/Desktop/ThinkWiki/docs/demo-wiki",
+        default=str(Path(__file__).resolve().parent.parent / "docs" / "demo-wiki"),
         help="Target demo wiki root",
     )
     args = parser.parse_args()
