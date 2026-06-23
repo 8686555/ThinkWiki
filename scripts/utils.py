@@ -1,5 +1,17 @@
 from __future__ import annotations
 
+"""
+ThinkWiki Module: utils
+
+Purpose:
+- Provide shared helpers for filesystem access, frontmatter parsing, output generation, and workspace summaries.
+
+Usage:
+- Imported by other ThinkWiki scripts; not intended for direct execution.
+- Run `python scripts/<script> --help` for direct CLI details when the file exposes its own arguments.
+"""
+
+
 import json
 import os
 import re
@@ -10,10 +22,26 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
 
 ROOT_MARKER = ".wiki-schema.md"
-WIKI_DIRS = ["concepts", "topics", "sources", "syntheses", "queries", "decisions"]
+WIKI_DIRS = ["concepts", "topics", "entities", "sources", "syntheses", "queries", "decisions"]
+GENERIC_ENTITY_SUFFIXES = {
+    "agent",
+    "app",
+    "engine",
+    "framework",
+    "platform",
+    "project",
+    "service",
+    "stack",
+    "suite",
+    "system",
+    "tool",
+    "wiki",
+    "workflow",
+}
 PAGE_TYPE_TO_DIR = {
     "concept": "concepts",
     "topic": "topics",
+    "entity": "entities",
     "source": "sources",
     "synthesis": "syntheses",
     "query": "queries",
@@ -22,6 +50,7 @@ PAGE_TYPE_TO_DIR = {
 SECTION_ORDER = [
     ("Topics", "topic"),
     ("Concepts", "concept"),
+    ("Entities", "entity"),
     ("Sources", "source"),
     ("Syntheses", "synthesis"),
     ("Queries", "query"),
@@ -43,6 +72,85 @@ def slugify(text: str, fallback_prefix: str = "item") -> str:
     text = re.sub(r"[^a-z0-9\u4e00-\u9fff]+", "-", text)
     text = re.sub(r"-+", "-", text).strip("-")
     return text or f"{fallback_prefix}-{now_slug()}"
+
+
+def entity_label_keys(label: str) -> list[str]:
+    value = re.sub(r"\s+", " ", str(label or "").strip())
+    if not value:
+        return []
+    keys: list[str] = [value.casefold()]
+    compact = re.sub(r"[^0-9a-z\u4e00-\u9fff]+", "", value.casefold())
+    if compact:
+        keys.append(compact)
+    tokens = [token for token in re.split(r"[\s\-_()/]+", value.casefold()) if token]
+    if len(tokens) > 1 and tokens[-1] in GENERIC_ENTITY_SUFFIXES:
+        stem_tokens = tokens[:-1]
+        stem = " ".join(stem_tokens).strip()
+        if stem:
+            keys.append(stem)
+        stem_compact = "".join(stem_tokens).strip()
+        if stem_compact:
+            keys.append(stem_compact)
+    return unique_strings(keys)
+
+
+def clean_string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
+def ambiguous_entity_merge_candidates(entity_nodes: list[dict[str, object]]) -> tuple[list[dict[str, object]], int]:
+    key_to_entities: dict[str, dict[str, object]] = {}
+    entity_labels: dict[str, str] = {}
+    for node in entity_nodes:
+        entity_id = str(node.get("id") or "")
+        entity_title = str(node.get("label") or entity_id).strip() or entity_id
+        entity_aliases = clean_string_list(node.get("aliases"))
+        entity_labels[entity_id] = entity_title
+        for label in [entity_title, *entity_aliases]:
+            for key in entity_label_keys(label):
+                record = key_to_entities.setdefault(key, {"ids": [], "labels": []})
+                if entity_id not in record["ids"]:
+                    record["ids"].append(entity_id)
+                if label not in record["labels"]:
+                    record["labels"].append(label)
+
+    candidates: list[dict[str, object]] = []
+    ambiguous_entity_ids: set[str] = set()
+    for identity_key, record in key_to_entities.items():
+        entity_ids = [str(item) for item in record["ids"] if str(item).strip()]
+        if len(entity_ids) < 2:
+            continue
+        ambiguous_entity_ids.update(entity_ids)
+        titles = [entity_labels.get(entity_id, entity_id) for entity_id in entity_ids]
+        labels = [str(item) for item in record["labels"] if str(item).strip()]
+        candidates.append({
+            "identityKey": identity_key,
+            "entityIds": entity_ids,
+            "titles": titles,
+            "labels": labels,
+            "reason": f"Identity key `{identity_key}` matches {len(entity_ids)} entity pages. Review manually before merging.",
+        })
+    return sorted(
+        candidates,
+        key=lambda item: (
+            -len(item["entityIds"]),
+            str(item["identityKey"]).lower(),
+        ),
+    )[:8], len(ambiguous_entity_ids)
+
+
+def unique_strings(items: Iterable[str]) -> list[str]:
+    results: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        value = str(item).strip()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        results.append(value)
+    return results
 
 
 def repo_root_from_script() -> Path:
@@ -159,6 +267,89 @@ def file_uri(path: Path) -> str:
     return path.resolve().as_uri()
 
 
+DEFAULT_SERVE_HOST = "127.0.0.1"
+DEFAULT_SERVE_PORT = 8765
+
+OUTPUT_SERVE_PAGES = (
+    ("Workspace Home", "index.html"),
+    ("Inbox Review", "inbox/index.html"),
+    ("Local Viewer", "viewer/index.html"),
+    ("Knowledge Graph", "graph/index.html"),
+    ("Graph Governance Report", "graph/report.html"),
+    ("Entity Merge Review", "graph/entity-merge-review.html"),
+    ("Entity Merge Plan", "graph/entity-merge-plan.html"),
+)
+
+
+def output_http_base(host: str = DEFAULT_SERVE_HOST, port: int = DEFAULT_SERVE_PORT) -> str:
+    return f"http://{host}:{port}"
+
+
+def output_http_url(
+    relative_path: str,
+    *,
+    host: str = DEFAULT_SERVE_HOST,
+    port: int = DEFAULT_SERVE_PORT,
+) -> str:
+    clean = relative_path.replace("\\", "/").lstrip("/")
+    return f"{output_http_base(host, port)}/{clean}"
+
+
+def output_dir_has_browsable_pages(output_dir: Path) -> bool:
+    if not output_dir.is_dir():
+        return False
+    return any((output_dir / relative).exists() for _, relative in OUTPUT_SERVE_PAGES)
+
+
+def output_serve_urls(
+    root: Path,
+    *,
+    host: str = DEFAULT_SERVE_HOST,
+    port: int = DEFAULT_SERVE_PORT,
+) -> dict[str, str]:
+    output_dir = root / "output"
+    urls: dict[str, str] = {}
+    for label, relative in OUTPUT_SERVE_PAGES:
+        if (output_dir / relative).exists():
+            urls[label] = output_http_url(relative, host=host, port=port)
+    return urls
+
+
+def format_output_serve_lines(
+    root: Path,
+    *,
+    host: str = DEFAULT_SERVE_HOST,
+    port: int = DEFAULT_SERVE_PORT,
+) -> list[str]:
+    urls = output_serve_urls(root, host=host, port=port)
+    lines = [
+        f"ThinkWiki output server: {output_http_base(host, port)}",
+        f"Wiki root: {root.resolve()}",
+        f"Serving directory: {(root / 'output').resolve()}",
+    ]
+    for label, url in urls.items():
+        lines.append(f"{label}: {url}")
+    if "Workspace Home" in urls:
+        lines.append(f"OpenClaw browser: openclaw browser --browser-profile openclaw open {urls['Workspace Home']}")
+    return lines
+
+
+def output_serve_hint_line(root: Path) -> str | None:
+    if not output_dir_has_browsable_pages(root / "output"):
+        return None
+    return (
+        "Browse via HTTP: "
+        f"run `python scripts/thinkwiki serve --root {display_root_arg(root)}` "
+        f"-> {output_http_url('index.html')}"
+    )
+
+
+def print_output_serve_hint(root: Path) -> None:
+    line = output_serve_hint_line(root)
+    if line:
+        print(line)
+
+
 def display_root_arg(root: Path) -> str:
     repo_root = repo_root_from_script()
     demo_root = (repo_root / "docs" / "demo-wiki").resolve()
@@ -230,32 +421,32 @@ def _inbox_quality(item: dict) -> tuple[str, str]:
         score -= 2
 
     if score >= 5:
-        return "ready", "网页元数据较完整，适合继续复核后正式 ingest。"
+        return "ready", "Web metadata looks complete enough for final review before formal ingest."
     if score >= 3:
-        return "review", "内容已可读，但建议先核对来源、作者或发布时间。"
-    return "weak", "提取信息偏少，建议优先人工检查正文质量和来源信息。"
+        return "review", "The content is readable, but you should verify the source, author, or publish date first."
+    return "weak", "Too little information was extracted. Check the article body and source details manually first."
 
 
 def _capture_state_reason(state: str) -> str:
     if state == "wait_completed":
-        return "等待模式下已抓到更完整正文。"
+        return "Wait mode captured a fuller article body."
     if state == "wait_timeout":
-        return "等待模式已结束，但正文仍不够稳定，建议人工复核。"
+        return "Wait mode finished, but the article body still looks unstable. Review it manually."
     if state == "needs_review":
-        return "本次采集已完成，但正文完整度一般。"
-    return "采集状态正常。"
+        return "Capture finished, but the article body quality is only moderate."
+    return "Capture status looks normal."
 
 
 def _capture_reason_hint(reason: str, fallback: str) -> str:
     if reason == "loading_placeholder":
-        return "页面仍像加载占位，建议稍后重试，或用 wait 模式重新抓取。"
+        return "The page still looks like a loading placeholder. Retry later or capture again with wait mode."
     if reason == "body_too_short":
-        return "正文太短，建议先人工确认这是不是完整文章页。"
+        return "The article body is too short. Check whether this is the full article page."
     if reason == "sparse_structure":
-        return "正文结构偏稀疏，可能只抓到了摘要或页头区域。"
+        return "The body structure looks sparse. The capture may contain only a summary or page header."
     if reason == "metadata_sparse":
-        return "作者、来源或发布时间信息不足，建议人工补核。"
-    return fallback or "采集结果结构完整。"
+        return "Author, source, or publish date metadata is missing. Review it manually."
+    return fallback or "The capture structure looks complete."
 
 
 def collect_inbox_items(root: Path) -> list[dict]:
@@ -626,15 +817,15 @@ def _render_inbox_review_section(
             batch_ingest_command(root, quality="ready"),
             *commands,
         ]
-    command_html = _render_command_list(commands, "当前分组还没有推荐命令。")
+    command_html = _render_command_list(commands, "No recommended commands for this section yet.")
     return (
         "<section class='group' id='{anchor}'>"
         "<div class='group-head'>"
         "<div><h2>{title}</h2><p>{description}</p></div>"
-        "<span class='badge'>条目 {count}</span>"
+        "<span class='badge'>Items {count}</span>"
         "</div>"
         "<div class='group-commands'>"
-        "<div class='command-label'>建议优先执行的下一步命令</div>"
+        "<div class='command-label'>Recommended next commands</div>"
         "{commands}"
         "</div>"
         "<div class='cards'>{cards}</div>"
@@ -677,34 +868,37 @@ def _attention_items(pages: list[dict], graph_insights: dict, graph_report: dict
     weak_pages = [item for item in isolated_nodes if str(item.get("severity", "")) == "weak"]
     isolated_pages = [item for item in isolated_nodes if str(item.get("severity", "")) == "isolated"]
     if isolated_pages:
-        items.append("当前有 <strong>{}</strong> 个孤立页面，建议优先补链接或补来源。".format(len(isolated_pages)))
+        items.append("There are <strong>{}</strong> isolated pages. Add links or source references first.".format(len(isolated_pages)))
     if weak_pages:
-        items.append("当前有 <strong>{}</strong> 个弱连接页面，适合继续整理上下文。".format(len(weak_pages)))
+        items.append("There are <strong>{}</strong> weakly connected pages. They need more context.".format(len(weak_pages)))
 
     report_stats = graph_report.get("stats", {}) if isinstance(graph_report.get("stats"), dict) else {}
     hub_stubs = int(report_stats.get("hubStubCount", 0) or 0)
     fragile_bridges = int(report_stats.get("fragileBridgeCount", 0) or 0)
     isolated_clusters = int(report_stats.get("isolatedClusterCount", 0) or 0)
+    ambiguous_alias_groups = int(report_stats.get("ambiguousAliasGroupCount", 0) or 0)
     if hub_stubs:
-        items.append("有 <strong>{}</strong> 个高连接薄内容页面，建议优先补摘要和上下文。".format(hub_stubs))
+        items.append("There are <strong>{}</strong> high-degree thin pages. Improve their summaries and context first.".format(hub_stubs))
     if fragile_bridges:
-        items.append("有 <strong>{}</strong> 个脆弱桥接页面，建议补强主题之间的连接。".format(fragile_bridges))
+        items.append("There are <strong>{}</strong> fragile bridge pages. Strengthen cross-topic connections.".format(fragile_bridges))
     if isolated_clusters:
-        items.append("当前存在 <strong>{}</strong> 个脱离主图的页面簇，建议尽快接回主图。".format(isolated_clusters))
+        items.append("There are <strong>{}</strong> page clusters disconnected from the main graph. Reconnect them soon.".format(isolated_clusters))
+    if ambiguous_alias_groups:
+        items.append("There are <strong>{}</strong> ambiguous alias groups. Review whether those entities should be merged.".format(ambiguous_alias_groups))
 
     missing_summary = [
         page for page in pages
         if str(page.get("summary", "") or "").strip() in {"", "(no summary)", "(no summary yet)"}
     ]
     if missing_summary:
-        items.append("有 <strong>{}</strong> 个页面还没有可靠摘要。".format(len(missing_summary)))
+        items.append("There are <strong>{}</strong> pages without reliable summaries.".format(len(missing_summary)))
 
     missing_sources = [
         page for page in pages
         if not isinstance(page.get("sources"), list) or not list(page.get("sources") or [])
     ]
     if missing_sources:
-        items.append("有 <strong>{}</strong> 个页面缺少来源信息。".format(len(missing_sources)))
+        items.append("There are <strong>{}</strong> pages without source references.".format(len(missing_sources)))
 
     return items[:4]
 
@@ -716,6 +910,7 @@ def _recommended_actions(
     graph_insights: dict,
     graph_report: dict,
     graph_report_exists: bool,
+    entity_merge_review_exists: bool,
     recent_pages: list[dict],
     inbox_page_exists: bool,
     inbox_count: int,
@@ -726,29 +921,29 @@ def _recommended_actions(
     if ready_items:
         actions.append({
             "label": "Ingest",
-            "title": "优先处理 Ready Inbox",
-            "summary": "当前有 {} 条可直接继续复核并 ingest 的 inbox 条目，建议先看最上面的 ready 分组。".format(len(ready_items)),
+            "title": "Prioritize Ready Inbox",
+            "summary": "There are {} inbox items ready for final review and formal ingest. Start with the Ready section.".format(len(ready_items)),
             "href": "inbox/index.html#ready" if inbox_page_exists else str(ready_items[0].get("href", "") or "#"),
         })
     if inbox_count:
         actions.append({
             "label": "Review",
-            "title": "处理 Inbox 待办",
-            "summary": "当前有 {} 条已采集内容，先检查最近一条，再决定是否正式 ingest。".format(inbox_count),
+            "title": "Review Inbox Queue",
+            "summary": "There are {} captured items. Review the latest one before deciding whether to ingest it.".format(inbox_count),
             "href": "inbox/index.html" if inbox_page_exists else str((inbox_items[0] if inbox_items else {}).get("href", "") or "#"),
         })
     if viewer_exists:
         actions.append({
             "label": "Read",
-            "title": "打开本地浏览页",
-            "summary": "按页面类型、状态和置信度快速浏览整个 wiki。",
+            "title": "Open Local Viewer",
+            "summary": "Browse the whole wiki by page type, status, and confidence.",
             "href": "viewer/index.html",
         })
     if graph_exists:
-        summary = "进入图谱页，查看关键页面、桥接页面和建议补链。"
+        summary = "Open the graph to inspect key pages, bridge pages, and suggested links."
         actions.append({
             "label": "Explore",
-            "title": "打开知识图谱",
+            "title": "Open Knowledge Graph",
             "summary": summary,
             "href": "graph/index.html",
         })
@@ -756,9 +951,17 @@ def _recommended_actions(
         report_actions = graph_report.get("topActions", []) if isinstance(graph_report.get("topActions"), list) else []
         actions.append({
             "label": "Govern",
-            "title": "查看图谱治理报告",
-            "summary": str(report_actions[0]) if report_actions else "查看孤立页面、脆弱桥接和建议补链的治理摘要。",
+            "title": "Open Graph Governance Report",
+            "summary": str(report_actions[0]) if report_actions else "See the governance summary for isolated pages, fragile bridges, and suggested links.",
             "href": "graph/report.html",
+        })
+    ambiguous_groups = int(graph_report.get("stats", {}).get("ambiguousAliasGroupCount", 0) or 0) if isinstance(graph_report.get("stats"), dict) else 0
+    if entity_merge_review_exists and ambiguous_groups:
+        actions.append({
+            "label": "Review",
+            "title": "Review Entity Merge Candidates",
+            "summary": "There are {} ambiguous entity alias groups. Confirm the canonical entity page first.".format(ambiguous_groups),
+            "href": "graph/entity-merge-review.html",
         })
 
     stats = graph_insights.get("stats", {}) if isinstance(graph_insights, dict) else {}
@@ -766,8 +969,8 @@ def _recommended_actions(
     if graph_exists and isolated_count:
         actions.append({
             "label": "Fix",
-            "title": "处理孤立页面",
-            "summary": "当前有 {} 个孤立页面，建议先在图谱中检查并补链。".format(isolated_count),
+            "title": "Fix Isolated Pages",
+            "summary": "There are {} isolated pages. Inspect them in the graph and add links first.".format(isolated_count),
             "href": "graph/index.html",
         })
 
@@ -775,8 +978,8 @@ def _recommended_actions(
     if graph_exists and suggested_links:
         actions.append({
             "label": "Link",
-            "title": "检查建议补链",
-            "summary": "图谱已识别 {} 条高置信度建议补链。".format(len(suggested_links)),
+            "title": "Review Suggested Links",
+            "summary": "The graph identified {} high-confidence suggested links.".format(len(suggested_links)),
             "href": "graph/index.html",
         })
 
@@ -785,16 +988,16 @@ def _recommended_actions(
         if page_id:
             actions.append({
                 "label": "Latest",
-                "title": "查看最近更新页面",
-                "summary": "从最近更新的页面继续阅读或整理。",
+                "title": "Open Latest Page",
+                "summary": "Continue reading or refining the most recently updated page.",
                 "href": "viewer/index.html#page={}".format(escape(page_id, quote=True)),
             })
 
     if not actions:
         actions.append({
             "label": "Build",
-            "title": "生成浏览页和图谱页",
-            "summary": "先运行 viewer 和 graph，让首页可以展示完整工作台内容。",
+            "title": "Build Viewer and Graph",
+            "summary": "Run viewer and graph first so the workspace home can show the full workbench.",
             "href": "",
         })
     return actions[:4]
@@ -805,6 +1008,8 @@ def write_output_home(root: Path) -> Path:
     viewer_path = output_dir / "viewer" / "index.html"
     graph_path = output_dir / "graph" / "index.html"
     graph_report_path = output_dir / "graph" / "report.html"
+    entity_merge_review_path = output_dir / "graph" / "entity-merge-review.html"
+    entity_merge_plan_path = output_dir / "graph" / "entity-merge-plan.html"
     inbox_path = output_dir / "inbox" / "index.html"
     viewer_data = _load_json(output_dir / "viewer" / "viewer.json")
     graph_data = _load_json(output_dir / "graph" / "graph.json")
@@ -817,10 +1022,45 @@ def write_output_home(root: Path) -> Path:
         or today_str()
     )
     page_count = int(viewer_data.get("pageCount", 0) or 0)
-    node_count = len(graph_data.get("nodes", [])) if isinstance(graph_data.get("nodes"), list) else 0
-    edge_count = len(graph_data.get("edges", [])) if isinstance(graph_data.get("edges"), list) else 0
+    graph_views = graph_data.get("views", {}) if isinstance(graph_data.get("views"), dict) else {}
+    knowledge_view = graph_views.get("knowledge", {}) if isinstance(graph_views.get("knowledge"), dict) else {}
+    suggested_view = graph_views.get("suggested", {}) if isinstance(graph_views.get("suggested"), dict) else {}
+    node_count = len(knowledge_view.get("nodes", [])) if isinstance(knowledge_view.get("nodes"), list) else len(graph_data.get("nodes", [])) if isinstance(graph_data.get("nodes"), list) else 0
+    edge_count = len(knowledge_view.get("edges", [])) if isinstance(knowledge_view.get("edges"), list) else len(graph_data.get("edges", [])) if isinstance(graph_data.get("edges"), list) else 0
     graph_insights = graph_data.get("insights", {}) if isinstance(graph_data.get("insights"), dict) else {}
-    ready_outputs = int(viewer_path.exists()) + int(graph_path.exists()) + int(inbox_path.exists())
+    graph_schema_version = str(graph_data.get("schema_version", "") or "1")
+    graph_default_view = str(graph_data.get("default_view", "") or "legacy")
+    claim_count = sum(
+        1 for node in knowledge_view.get("nodes", [])
+        if isinstance(node, dict) and str(node.get("type", "") or "") == "claim"
+    ) if isinstance(knowledge_view.get("nodes"), list) else 0
+    entity_count = sum(
+        1 for node in knowledge_view.get("nodes", [])
+        if isinstance(node, dict) and str(node.get("type", "") or "") == "entity"
+    ) if isinstance(knowledge_view.get("nodes"), list) else 0
+    aliased_entity_count = sum(
+        1 for node in knowledge_view.get("nodes", [])
+        if isinstance(node, dict)
+        and str(node.get("type", "") or "") == "entity"
+        and isinstance(node.get("aliases"), list)
+        and any(str(item).strip() for item in node.get("aliases", []))
+    ) if isinstance(knowledge_view.get("nodes"), list) else 0
+    alias_count = sum(
+        len([str(item).strip() for item in node.get("aliases", []) if str(item).strip()])
+        for node in knowledge_view.get("nodes", [])
+        if isinstance(node, dict)
+        and str(node.get("type", "") or "") == "entity"
+        and isinstance(node.get("aliases"), list)
+    ) if isinstance(knowledge_view.get("nodes"), list) else 0
+    suggested_edge_count = len(suggested_view.get("edges", [])) if isinstance(suggested_view.get("edges"), list) else 0
+    ready_outputs = (
+        int(viewer_path.exists())
+        + int(graph_path.exists())
+        + int(graph_report_path.exists())
+        + int(entity_merge_review_path.exists())
+        + int(entity_merge_plan_path.exists())
+        + int(inbox_path.exists())
+    )
     pages = viewer_data.get("pages", []) if isinstance(viewer_data.get("pages"), list) else []
     all_inbox_items = collect_inbox_items(root)
     inbox_count = len(all_inbox_items)
@@ -836,10 +1076,12 @@ def write_output_home(root: Path) -> Path:
     key_pages = graph_insights.get("topNodes", []) if isinstance(graph_insights.get("topNodes"), list) else []
     output_items: list[str] = []
     for title, path, summary in [
-        ("Inbox Review", inbox_path, "查看待处理 inbox 条目，并复制下一步 ingest 命令"),
-        ("本地浏览页", viewer_path, "按页面类型、置信度和状态浏览整个 wiki"),
-        ("知识图谱", graph_path, "查看页面之间的引用、包含、关键页面和建议补链"),
-        ("图谱治理报告", graph_report_path, "查看孤立页面、脆弱桥接、孤立子图和治理建议"),
+        ("Inbox Review", inbox_path, "Review inbox items and copy the next ingest commands"),
+        ("Local Viewer", viewer_path, "Browse the entire wiki by page type, confidence, and status"),
+        ("Knowledge Graph", graph_path, "Switch between knowledge, document, and suggested views to inspect content relations and candidate edges"),
+        ("Graph Governance Report", graph_report_path, "Inspect isolated pages, fragile bridges, disconnected clusters, and governance actions"),
+        ("Entity Merge Review", entity_merge_review_path, "Review alias collision candidates and confirm which entity pages should be merged or downgraded to aliases"),
+        ("Entity Merge Plan", entity_merge_plan_path, "Preview the canonical merge plan before writing aliases, sources, and topics back"),
     ]:
         if not path.exists():
             continue
@@ -857,16 +1099,18 @@ def write_output_home(root: Path) -> Path:
             )
         )
     if not output_items:
-        output_items.append("<div class='empty'>还没有可浏览的成果页。先运行 viewer 或 graph 命令。</div>")
+        output_items.append("<div class='empty'>No browsable outputs yet. Run viewer or graph first.</div>")
 
     stats: list[str] = []
     for label, value in [
-        ("成果页", ready_outputs),
+        ("Outputs", ready_outputs),
         ("Inbox", inbox_count),
         ("Ready", inbox_summary.get("ready", 0)),
-        ("页面数", page_count),
-        ("图节点", node_count),
-        ("图关系", edge_count),
+        ("Pages", page_count),
+        ("Graph Nodes", node_count),
+        ("Graph Edges", edge_count),
+        ("Claims", claim_count),
+        ("Entities", entity_count),
     ]:
         stats.append(
             "<div class='stat'><strong>{value}</strong><span>{label}</span></div>".format(
@@ -874,10 +1118,10 @@ def write_output_home(root: Path) -> Path:
                 label=escape(label),
             )
         )
-    recent_pages_html = _render_page_list(recent_pages, "还没有可推荐的最近页面。先运行 viewer 生成浏览成果页。")
-    generated_pages_html = _render_page_list(generated_pages, "还没有最近生成的 query / synthesis / decision / concept 页面。")
-    featured_pages_html = _render_page_list(featured_pages, "还没有代表性页面。")
-    attention_html = _render_bullet_list(attention_items, "当前没有明显需要优先处理的问题。")
+    recent_pages_html = _render_page_list(recent_pages, "No recent pages to recommend yet. Run viewer to generate browseable outputs first.")
+    generated_pages_html = _render_page_list(generated_pages, "No recently generated query, synthesis, decision, or concept pages yet.")
+    featured_pages_html = _render_page_list(featured_pages, "No featured pages yet.")
+    attention_html = _render_bullet_list(attention_items, "Nothing urgent needs attention right now.")
     actions_html = _render_action_cards(
         _recommended_actions(
             viewer_exists=viewer_path.exists(),
@@ -885,14 +1129,15 @@ def write_output_home(root: Path) -> Path:
             graph_insights=graph_insights,
             graph_report=graph_report,
             graph_report_exists=graph_report_path.exists(),
+            entity_merge_review_exists=entity_merge_review_path.exists(),
             recent_pages=recent_pages,
             inbox_page_exists=inbox_path.exists(),
             inbox_count=inbox_count,
             inbox_items=all_inbox_items,
         ),
-        "当前还没有可推荐的下一步动作。",
+        "No recommended next actions yet.",
     )
-    inbox_html = _render_inbox_list(inbox_items, "还没有待处理的 inbox 条目。你可以先运行 clip 采集网页、文本或文件。")
+    inbox_html = _render_inbox_list(inbox_items, "No inbox items yet. Run clip to collect webpages, text, or files first.")
     graph_snapshot_items: list[str] = []
     report_summary = str(graph_report.get("summary", "") or "").strip()
     if report_summary:
@@ -901,22 +1146,51 @@ def write_output_home(root: Path) -> Path:
         graph_snapshot_items.append("<div class='snapshot-copy'>{}</div>".format(escape(graph_summary)))
     if key_pages:
         graph_snapshot_items.append(
-            "<div class='snapshot-chip'>当前关键页面: <strong>{}</strong></div>".format(
+            "<div class='snapshot-chip'>Current key page: <strong>{}</strong></div>".format(
                 escape(str(key_pages[0].get("title", "") or "n/a"))
             )
         )
+    graph_snapshot_items.append(
+        "<div class='snapshot-chip'>Graph Schema v{schema}</div>"
+        "<div class='snapshot-chip'>Default View {default_view}</div>"
+        "<div class='snapshot-chip'>Knowledge Nodes {knowledge_nodes}</div>"
+        "<div class='snapshot-chip'>Claims {claims}</div>"
+        "<div class='snapshot-chip'>Entities {entities}</div>"
+        "<div class='snapshot-chip'>Aliased Entities {aliased_entities}</div>"
+        "<div class='snapshot-chip'>Aliases {aliases}</div>"
+        "<div class='snapshot-chip'>Ambiguous Alias Groups {ambiguous_groups}</div>"
+        "<div class='snapshot-chip'>Ambiguous Entities {ambiguous_entities}</div>"
+        "<div class='snapshot-chip'>Suggested Edges {suggested_edges}</div>".format(
+            schema=escape(graph_schema_version),
+            default_view=escape(graph_default_view),
+            knowledge_nodes=escape(str(node_count)),
+            claims=escape(str(claim_count)),
+            entities=escape(str(entity_count)),
+            aliased_entities=escape(str(aliased_entity_count)),
+            aliases=escape(str(alias_count)),
+            ambiguous_groups=escape(str(int(graph_report_stats.get("ambiguousAliasGroupCount", 0) or 0))),
+            ambiguous_entities=escape(str(int(graph_report_stats.get("ambiguousEntityCount", 0) or 0))),
+            suggested_edges=escape(str(suggested_edge_count)),
+        )
+    )
     suggested_count = len(graph_insights.get("suggestedLinks", [])) if isinstance(graph_insights.get("suggestedLinks"), list) else 0
     hub_stub_count = int(graph_report_stats.get("hubStubCount", 0) or 0)
     fragile_bridge_count = int(graph_report_stats.get("fragileBridgeCount", 0) or 0)
     isolated_cluster_count = int(graph_report_stats.get("isolatedClusterCount", 0) or 0)
+    isolated_entity_count = int(graph_report_stats.get("isolatedEntityCount", 0) or 0)
+    ambiguous_alias_group_count = int(graph_report_stats.get("ambiguousAliasGroupCount", 0) or 0)
     graph_snapshot_items.append(
-        "<div class='snapshot-chip'>孤立页面 {isolated} 个</div>"
-        "<div class='snapshot-chip'>建议补链 {links} 条</div>"
-        "<div class='snapshot-chip'>Hub Stubs {hub_stubs} 个</div>"
-        "<div class='snapshot-chip'>Fragile Bridges {fragile} 个</div>"
-        "<div class='snapshot-chip'>Isolated Clusters {clusters} 个</div>".format(
+        "<div class='snapshot-chip'>Isolated Pages {isolated}</div>"
+        "<div class='snapshot-chip'>Isolated Entities {isolated_entities}</div>"
+        "<div class='snapshot-chip'>Suggested Links {links}</div>"
+        "<div class='snapshot-chip'>Ambiguous Alias Groups {ambiguous_groups}</div>"
+        "<div class='snapshot-chip'>Hub Stubs {hub_stubs}</div>"
+        "<div class='snapshot-chip'>Fragile Bridges {fragile}</div>"
+        "<div class='snapshot-chip'>Isolated Clusters {clusters}</div>".format(
             isolated=escape(str(int(graph_report_stats.get("isolatedPageCount", graph_stats.get("isolatedCount", 0)) or 0))),
+            isolated_entities=escape(str(isolated_entity_count)),
             links=escape(str(suggested_count)),
+            ambiguous_groups=escape(str(ambiguous_alias_group_count)),
             hub_stubs=escape(str(hub_stub_count)),
             fragile=escape(str(fragile_bridge_count)),
             clusters=escape(str(isolated_cluster_count)),
@@ -926,12 +1200,12 @@ def write_output_home(root: Path) -> Path:
     if report_actions:
         graph_snapshot_items.append(_render_bullet_list(
             [escape(str(item)) for item in report_actions[:3]],
-            "当前没有额外治理动作。",
+            "No additional governance actions.",
         ))
-    graph_snapshot_html = "\n".join(graph_snapshot_items) if graph_snapshot_items else "<div class='empty small'>图谱洞察将在生成 graph 后显示。</div>"
+    graph_snapshot_html = "\n".join(graph_snapshot_items) if graph_snapshot_items else "<div class='empty small'>Graph insights will appear after you build the graph.</div>"
 
     html = """<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -1251,11 +1525,11 @@ def write_output_home(root: Path) -> Path:
       <div class="hero-title">
         <h1>{wiki_title}</h1>
         <div class="meta">
-          <span class="badge">知识工作台首页</span>
-          <span class="badge">生成日期 {generated_at}</span>
+          <span class="badge">Workspace Home</span>
+          <span class="badge">Generated {generated_at}</span>
         </div>
       </div>
-      <p class="lead">这里不只是成果入口页，而是当前 wiki 的工作台首页。你可以先看最近发生了什么、哪些页面值得继续整理，以及 inbox 里还有哪些采集内容待正式入库，再决定进入浏览页还是图谱页。</p>
+      <p class="lead">This is more than an output index. It is the current workspace home for the wiki, where you can see what changed, what needs attention, and what is still waiting in the inbox before deciding whether to open the viewer or the graph.</p>
       <div class="stats">
         {stats}
       </div>
@@ -1263,14 +1537,14 @@ def write_output_home(root: Path) -> Path:
     <div class="workspace-grid">
       <section class="panel">
         <h2>What Changed</h2>
-        <p>这里汇总最近更新和最近生成的页面，帮助你快速判断这次整理后 wiki 发生了什么变化。</p>
+        <p>This section highlights recently updated and recently generated pages so you can quickly see what changed in the wiki.</p>
         {recent_pages}
         <div style="height: 12px;"></div>
         {generated_pages}
       </section>
       <section class="panel">
         <h2>Next Actions</h2>
-        <p>从这里直接进入最值得继续操作的下一步，而不是手动判断应该先看哪里。</p>
+        <p>Jump directly into the most valuable next step instead of manually deciding where to look first.</p>
         <div class="actions">
           {actions}
         </div>
@@ -1279,12 +1553,12 @@ def write_output_home(root: Path) -> Path:
     <div class="workspace-grid">
       <section class="panel">
         <h2>Needs Attention</h2>
-        <p>优先显示当前知识库里还比较薄弱的地方，例如孤立页面、弱连接页面、缺摘要或缺来源的页面。</p>
+        <p>This section highlights the weakest spots in the current knowledge base, such as isolated pages, weakly connected pages, or pages missing summaries and sources.</p>
         {attention}
       </section>
       <section class="panel">
         <h2>Graph Snapshot</h2>
-        <p>直接读取知识图谱的结构洞察，让首页先告诉你现在图里最值得关注的地方。</p>
+        <p>Read structural graph insights directly from the knowledge graph so the home page can tell you what matters most right now.</p>
         <div class="snapshot">
           {graph_snapshot}
         </div>
@@ -1293,25 +1567,25 @@ def write_output_home(root: Path) -> Path:
     <div class="section-grid">
       <section class="panel">
         <h2>Featured Pages</h2>
-        <p>优先展示 concept、decision、synthesis 和 source，帮助你快速抓到这个知识库最有价值的沉淀。</p>
+        <p>Surface concept, decision, synthesis, and source pages first so you can spot the most valuable knowledge artifacts quickly.</p>
         {featured_pages}
       </section>
       <section class="panel">
         <h2>Outputs Overview</h2>
-        <p>浏览页和图谱页仍然是最重要的两个成果入口，但现在它们被纳入统一工作台视图。</p>
+        <p>The viewer and graph remain the two most important outputs, but they now live inside one unified workspace view.</p>
         <div class="grid">
           {items}
         </div>
       </section>
       <section class="panel">
         <h2>Inbox Queue</h2>
-        <p>这里显示最近采集到 inbox 的内容。你可以先打开原始条目做快速复核，再决定是否运行 ingest 正式入库。</p>
+        <p>This section shows the most recent inbox captures. Open the raw item first for a quick review, then decide whether to run ingest.</p>
         {inbox_items}
       </section>
     </div>
     <div class="guide">
-      <strong>从这里开始</strong>
-      <span>先看 `What Changed`、`Needs Attention` 和 `Inbox Queue`，再决定进入浏览页或图谱页。如果你刚导入或采集了新资料，建议重新运行 viewer 和 graph 以刷新工作台首页。</span>
+      <strong>Start here</strong>
+      <span>Start with `What Changed`, `Needs Attention`, and `Inbox Queue`, then decide whether to open the viewer or the graph. If you just imported or captured new material, rerun viewer and graph to refresh this home page.</span>
     </div>
   </main>
 </body>
@@ -1343,38 +1617,38 @@ def write_inbox_review(root: Path) -> Path:
     summary = _inbox_quality_summary(items)
     priority_items = _priority_inbox_items(items)
     priority_commands = [str(item.get("ingest_command", "") or "") for item in priority_items if str(item.get("ingest_command", "") or "")]
-    priority_html = _render_inbox_list(priority_items, "还没有可优先处理的 inbox 条目。")
+    priority_html = _render_inbox_list(priority_items, "No priority inbox items yet.")
     sections_html = "\n".join([
         _render_inbox_review_section(
             anchor="ready",
             title="Ready To Ingest",
-            description="这一组的网页元数据和正文完整度都比较好，通常适合先做最终复核，然后正式 ingest。",
+            description="These captures have strong metadata and article-body quality. They are usually ready for final review before formal ingest.",
             items=groups.get("ready", []),
             inbox_dir=inbox_dir,
             root=root,
-            empty_text="当前还没有可直接 ingest 的 ready 条目。",
+            empty_text="There are no Ready items for ingest yet.",
         ),
         _render_inbox_review_section(
             anchor="review",
             title="Needs Review",
-            description="这一组通常已经可读，但还建议核对来源、作者、发布时间或页面主内容是否完整。",
+            description="These captures are usually readable, but you should still verify the source, author, publish date, or article completeness.",
             items=groups.get("review", []),
             inbox_dir=inbox_dir,
             root=root,
-            empty_text="当前没有处于 review 状态的条目。",
+            empty_text="There are no items in review right now.",
         ),
         _render_inbox_review_section(
             anchor="weak",
             title="Weak Captures",
-            description="这一组优先做人工检查，确认是不是抓到了 loading 页、摘要页或信息过少的内容。",
+            description="Review these captures manually first to confirm they are not loading pages, summary-only pages, or low-information captures.",
             items=groups.get("weak", []),
             inbox_dir=inbox_dir,
             root=root,
-            empty_text="当前没有 weak 条目。",
+            empty_text="There are no weak captures right now.",
         ),
-    ]) if items else "<div class='empty'>还没有待处理的 inbox 条目。先运行 `python scripts/thinkwiki clip ...` 采集网页、文本或文件。</div>"
+    ]) if items else "<div class='empty'>There are no inbox items yet. Run `python scripts/thinkwiki clip ...` to collect webpages, text, or files first.</div>"
     html = """<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -1615,9 +1889,9 @@ def write_inbox_review(root: Path) -> Path:
       <div class="hero-grid">
         <div>
           <h1>{wiki_title}</h1>
-          <p class="lead">这里集中显示已经 clip 到 inbox、但还没有正式 ingest 的内容。现在它会按 `ready / review / weak` 分组，帮助你先处理最值得正式入库的条目，再回头处理需要人工检查的内容。</p>
+          <p class="lead">This page gathers everything that has been clipped into the inbox but not formally ingested yet. Items are grouped into `ready / review / weak` so you can process the highest-value captures first and come back to the ones that need manual inspection.</p>
           <div class="badges">
-            <span class="badge">待处理条目 {count}</span>
+            <span class="badge">Items {count}</span>
             <span class="badge"><a href="../index.html" target="_blank" rel="noopener">Open workspace home</a></span>
           </div>
           <div class="summary-grid">
@@ -1629,9 +1903,9 @@ def write_inbox_review(root: Path) -> Path:
         </div>
         <div class="panel">
           <h2>Priority Queue</h2>
-          <p>这里先列出最值得优先处理的条目。通常顺序是 ready -> review -> weak。</p>
+          <p>This section lists the items that deserve attention first. The usual priority is ready -> review -> weak.</p>
           {priority_items}
-          <div class="command-label" style="margin-top: 14px;">优先建议命令</div>
+          <div class="command-label" style="margin-top: 14px;">Recommended priority commands</div>
           {priority_commands}
         </div>
       </div>
@@ -1647,7 +1921,7 @@ def write_inbox_review(root: Path) -> Path:
         review_count=escape(str(summary.get("review", 0))),
         weak_count=escape(str(summary.get("weak", 0))),
         priority_items=priority_html,
-        priority_commands=_render_command_list(priority_commands[:3], "当前还没有可推荐的 ingest 命令。"),
+        priority_commands=_render_command_list(priority_commands[:3], "No ingest commands to recommend yet."),
         sections=sections_html,
     )
     write_text(inbox_path, html)
@@ -1674,6 +1948,11 @@ def output_access_lines(root: Path) -> list[str]:
     if output_home is not None:
         lines.append("Output hub: output/index.html")
         lines.append(f"Output hub URI: {file_uri(output_home)}")
+        lines.append(
+            "Browse via HTTP: "
+            f"`python scripts/thinkwiki serve --root {display_root_arg(root)}` "
+            f"-> {output_http_url('index.html')}"
+        )
         if viewer_exists and not graph_exists:
             lines.append(f"Next: run `python scripts/thinkwiki graph --root {root}` to generate the graph page.")
         elif graph_exists and not viewer_exists:

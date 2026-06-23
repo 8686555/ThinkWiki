@@ -6,6 +6,15 @@ updated: {{DATE}}
 summary: {{SUMMARY}}
 sources:
   - {{RAW_PATH}}
+topics:
+{{TOPIC_ITEMS}}
+entities:
+{{ENTITY_ITEMS}}
+concepts:
+{{CONCEPT_ITEMS}}
+maturity: developing
+claims:
+{{CLAIM_ITEMS}}
 tags:
   - source
 confidence: {{CONFIDENCE}}
@@ -37,6 +46,18 @@ status: {{STATUS}}
 ## Connections
 
 {{RELATED_LINKS}}
+
+## Entities
+
+{{ENTITY_MARKDOWN}}
+
+## Knowledge Connections
+
+{{CONNECTION_ITEMS}}
+
+## Claims
+
+{{CLAIM_MARKDOWN}}
 
 ## Open Questions
 

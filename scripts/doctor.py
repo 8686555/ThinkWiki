@@ -1,6 +1,18 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+"""
+ThinkWiki Script: doctor
+
+Purpose:
+- Check whether the local ThinkWiki runtime supports the expected import and conversion capabilities.
+
+Usage:
+- Prefer `python scripts/thinkwiki doctor ...`.
+- Run `python scripts/<script> --help` for direct CLI details when the file exposes its own arguments.
+"""
+
+
 import argparse
 import sys
 from pathlib import Path
@@ -29,7 +41,12 @@ ROOT_REQUIRED_SCRIPTS = [
     "scripts/lint_wiki.py",
     "scripts/build_graph.py",
     "scripts/graph_report.py",
+    "scripts/entity_merge_review.py",
+    "scripts/entity_merge_apply.py",
     "scripts/build_viewer.py",
+    "scripts/build_inbox.py",
+    "scripts/clip.py",
+    "scripts/serve_outputs.py",
     "scripts/health.py",
     "scripts/status.py",
     "scripts/doctor.py",
@@ -50,6 +67,7 @@ ROOT_REQUIRED_TEMPLATES = [
     "templates/pages/synthesis.md",
     "templates/pages/decision.md",
     "templates/pages/concept.md",
+    "templates/pages/entity.md",
 ]
 WIKI_REQUIRED_PATHS = [
     ".wiki-schema.md",

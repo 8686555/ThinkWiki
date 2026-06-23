@@ -1,6 +1,18 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+"""
+ThinkWiki Module: runtime_capabilities
+
+Purpose:
+- Describe and check the runtime capabilities that ThinkWiki depends on for imports and conversions.
+
+Usage:
+- Imported by runtime and diagnostics scripts; not intended for direct end-user execution.
+- Run `python scripts/<script> --help` for direct CLI details when the file exposes its own arguments.
+"""
+
+
 import importlib
 from pathlib import Path
 from typing import Callable

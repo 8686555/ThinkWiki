@@ -9,7 +9,7 @@
   "captureMode": "wait",
   "captureState": "wait_completed",
   "captureReason": "ready",
-  "reviewHint": "采集结果结构完整，可继续复核后正式 ingest。",
+  "reviewHint": "The capture looks complete enough for final review before formal ingest.",
   "captureAttempts": 2,
   "captureElapsedSeconds": 1.2,
   "mediaPolicy": "always",

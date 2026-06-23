@@ -1,6 +1,18 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+"""
+ThinkWiki Script: query_wiki
+
+Purpose:
+- Save a question and its answer as a reusable query page in the wiki.
+
+Usage:
+- Prefer `python scripts/thinkwiki query ...`.
+- Run `python scripts/<script> --help` for direct CLI details when the file exposes its own arguments.
+"""
+
+
 import argparse
 from pathlib import Path
 

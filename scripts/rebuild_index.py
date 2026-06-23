@@ -1,6 +1,18 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+"""
+ThinkWiki Script: rebuild_index
+
+Purpose:
+- Rebuild the Markdown index page that summarizes wiki pages by section.
+
+Usage:
+- Prefer `python scripts/thinkwiki rebuild-index ...`.
+- Run `python scripts/<script> --help` for direct CLI details when the file exposes its own arguments.
+"""
+
+
 import argparse
 from pathlib import Path
 

@@ -1,6 +1,18 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+"""
+ThinkWiki Script: thinkwiki
+
+Purpose:
+- Dispatch all public ThinkWiki commands through one stable entry point and bootstrap the runtime when needed.
+
+Usage:
+- Run as `python scripts/thinkwiki <command> [args]`.
+- Run `python scripts/<script> --help` for direct CLI details when the file exposes its own arguments.
+"""
+
+
 import os
 import subprocess
 import sys
@@ -30,7 +42,10 @@ COMMAND_TO_SCRIPT = {
     "lint": "lint_wiki.py",
     "graph": "build_graph.py",
     "graph-report": "graph_report.py",
+    "entity-merge-review": "entity_merge_review.py",
+    "entity-merge-apply": "entity_merge_apply.py",
     "viewer": "build_viewer.py",
+    "serve": "serve_outputs.py",
     "health": "health.py",
     "status": "status.py",
     "doctor": "doctor.py",
@@ -63,7 +78,10 @@ Commands:
   lint            -> lint_wiki.py
   graph           -> build_graph.py
   graph-report    -> graph_report.py
+  entity-merge-review -> entity_merge_review.py
+  entity-merge-apply -> entity_merge_apply.py
   viewer          -> build_viewer.py
+  serve           -> serve_outputs.py
   health          -> health.py
   status          -> status.py
   doctor          -> doctor.py
@@ -76,6 +94,9 @@ Examples:
   python scripts/thinkwiki batch-clip --root /path/to/my-wiki --source-dir /path/to/imports --dry-run
   python scripts/thinkwiki batch-ingest --root /path/to/my-wiki --quality ready --dry-run
   python scripts/thinkwiki graph-report --root /path/to/my-wiki
+  python scripts/thinkwiki entity-merge-review --root /path/to/my-wiki
+  python scripts/thinkwiki entity-merge-apply --root /path/to/my-wiki --identity-key openclaw --canonical wiki/entities/openclaw.md
+  python scripts/thinkwiki serve --root /path/to/my-wiki
   python scripts/thinkwiki health --root /path/to/my-wiki
   python scripts/thinkwiki status --root /path/to/my-wiki
   python scripts/thinkwiki convert --source /path/to/file.pdf --output-file /path/to/file.md

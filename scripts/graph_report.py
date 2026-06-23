@@ -1,13 +1,25 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+"""
+ThinkWiki Script: graph_report
+
+Purpose:
+- Generate a governance report from the current graph outputs.
+
+Usage:
+- Prefer `python scripts/thinkwiki graph-report ...`.
+- Run `python scripts/<script> --help` for direct CLI details when the file exposes its own arguments.
+"""
+
+
 import argparse
 import json
 from html import escape
 from pathlib import Path
 
 from build_graph import node_metrics
-from utils import append_log, file_uri, find_repo_root, today_str, write_output_home, write_text
+from utils import ambiguous_entity_merge_candidates, append_log, file_uri, find_repo_root, print_output_serve_hint, today_str, write_output_home, write_text
 
 
 def _load_graph(root: Path) -> dict[str, object]:
@@ -20,8 +32,44 @@ def _load_graph(root: Path) -> dict[str, object]:
         raise SystemExit(f"Invalid graph data: {graph_path} ({exc})") from exc
 
 
+def _graph_view(graph: dict[str, object], view_name: str = "knowledge") -> dict[str, object]:
+    views = graph.get("views", {})
+    if isinstance(views, dict):
+        view = views.get(view_name, {})
+        if isinstance(view, dict):
+            nodes = view.get("nodes", [])
+            edges = view.get("edges", [])
+            insights = view.get("insights", {})
+            if isinstance(nodes, list) and isinstance(edges, list) and isinstance(insights, dict):
+                return {"nodes": nodes, "edges": edges, "insights": insights, "name": view_name}
+    return {
+        "nodes": graph.get("nodes", []) if isinstance(graph.get("nodes"), list) else [],
+        "edges": graph.get("edges", []) if isinstance(graph.get("edges"), list) else [],
+        "insights": graph.get("insights", {}) if isinstance(graph.get("insights"), dict) else {},
+        "name": "legacy",
+    }
+
+
 def _page_nodes(nodes: list[dict[str, object]]) -> list[dict[str, object]]:
-    return [node for node in nodes if str(node.get("type") or "page") not in {"raw", "file"}]
+    return [node for node in nodes if str(node.get("type") or "page") not in {"raw", "file", "claim"}]
+
+
+def _entity_nodes(nodes: list[dict[str, object]]) -> list[dict[str, object]]:
+    return [node for node in nodes if str(node.get("type") or "page") == "entity"]
+
+
+def _entity_alias_stats(entity_nodes: list[dict[str, object]]) -> tuple[int, int]:
+    alias_count = 0
+    aliased_entity_count = 0
+    for node in entity_nodes:
+        aliases = node.get("aliases", [])
+        if not isinstance(aliases, list):
+            continue
+        clean_aliases = [str(item).strip() for item in aliases if str(item).strip()]
+        alias_count += len(clean_aliases)
+        if clean_aliases:
+            aliased_entity_count += 1
+    return alias_count, aliased_entity_count
 
 
 def _summary_length(node: dict[str, object]) -> int:
@@ -68,6 +116,8 @@ def _hub_stub_candidates(
     items: list[dict[str, object]] = []
     for node in page_nodes:
         node_id = str(node["id"])
+        if str(node.get("type") or "page") == "entity":
+            continue
         degree = int(metrics[node_id]["degree"])
         summary_length = _summary_length(node)
         if degree < threshold or summary_length >= 80:
@@ -78,7 +128,7 @@ def _hub_stub_candidates(
             "type": str(node.get("type") or "page"),
             "degree": degree,
             "summaryLength": summary_length,
-            "reason": f"关系数 {degree} 较高，但摘要只有 {summary_length} 个字符",
+            "reason": f"Degree is {degree}, but the summary is only {summary_length} characters long.",
         })
     return sorted(items, key=lambda item: (-int(item["degree"]), int(item["summaryLength"]), str(item["title"]).lower()))[:6]
 
@@ -100,7 +150,7 @@ def _fragile_bridge_candidates(
                 "type": str(node.get("type") or "page"),
                 "degree": degree,
                 "neighborTypes": sorted(neighbor_types),
-                "reason": f"只靠 {degree} 条关系连接 {len(neighbor_types)} 类页面，结构较脆弱",
+                "reason": f"Only {degree} relations connect {len(neighbor_types)} page types, so this bridge is fragile.",
             })
     return sorted(items, key=lambda item: (int(item["degree"]), -len(item["neighborTypes"]), str(item["title"]).lower()))[:6]
 
@@ -120,7 +170,7 @@ def _page_health_candidates(
                 "type": str(node.get("type") or "page"),
                 "severity": "isolated",
                 "degree": degree,
-                "reason": "还没有和其他页面建立任何页面级关系",
+                "reason": "No page-level relationships yet.",
             })
         elif degree == 1:
             items.append({
@@ -129,7 +179,7 @@ def _page_health_candidates(
                 "type": str(node.get("type") or "page"),
                 "severity": "weak",
                 "degree": degree,
-                "reason": "目前只有 1 条页面级关系，建议继续补链",
+                "reason": "Only one page-level relationship so far. Add more links.",
             })
     return sorted(
         items,
@@ -158,7 +208,7 @@ def _isolated_cluster_candidates(
             "size": len(component),
             "nodeIds": component,
             "titles": labels[:4],
-            "reason": f"该子图与主图断开，包含 {len(component)} 个页面",
+            "reason": f"This cluster is disconnected from the main graph and contains {len(component)} pages.",
         })
     return sorted(items, key=lambda item: (-int(item["size"]), ",".join(item["titles"]).lower()))[:4]
 
@@ -168,27 +218,34 @@ def _top_actions(report: dict[str, object]) -> list[str]:
     assert isinstance(stats, dict)
     actions: list[str] = []
     if int(stats.get("isolatedPageCount", 0) or 0):
-        actions.append("优先处理孤立页面，先补 `links_to` 或来源引用。")
+        actions.append("Fix isolated pages first by adding `links_to` edges or source references.")
     if int(stats.get("hubStubCount", 0) or 0):
-        actions.append("检查高连接但内容薄弱的页面，补摘要、上下文和来源。")
+        actions.append("Strengthen high-degree thin pages with better summaries, context, and sources.")
     if int(stats.get("fragileBridgeCount", 0) or 0):
-        actions.append("加强脆弱桥接页面，避免主题之间只靠单点连接。")
+        actions.append("Reinforce fragile bridge pages so cross-topic links do not rely on single points.")
     if int(stats.get("isolatedClusterCount", 0) or 0):
-        actions.append("把孤立子图连接回主图，提升整体可导航性。")
+        actions.append("Reconnect isolated clusters back to the main graph.")
     if int(stats.get("suggestedLinkCount", 0) or 0):
-        actions.append("复核建议补链，把高置信度关系转成显式页面链接。")
-    return actions[:4] or ["当前图谱结构总体稳定，可继续扩充高价值页面。"]
+        actions.append("Review suggested links and convert strong candidates into explicit page links.")
+    if int(stats.get("ambiguousAliasGroupCount", 0) or 0):
+        actions.append("Review ambiguous alias groups so multiple entity pages do not collapse into the same identity key unexpectedly.")
+    return actions[:4] or ["The graph structure looks stable. Continue expanding high-value pages."]
 
 
 def _console_summary(report: dict[str, object]) -> str:
     stats = report["stats"]
     assert isinstance(stats, dict)
     return (
-        "pages={pages}, relations={relations}, isolatedPages={isolated}, weakPages={weak}, "
-        "hubStubs={hub_stubs}, fragileBridges={fragile}, isolatedClusters={clusters}, suggestedLinks={suggested}"
+        "pages={pages}, relations={relations}, entities={entities}, aliasedEntities={aliased_entities}, aliases={aliases}, ambiguousAliasGroups={ambiguous_groups}, ambiguousEntities={ambiguous_entities}, "
+        "isolatedPages={isolated}, weakPages={weak}, hubStubs={hub_stubs}, fragileBridges={fragile}, isolatedClusters={clusters}, suggestedLinks={suggested}"
     ).format(
         pages=int(stats.get("nodeCount", 0) or 0),
         relations=int(stats.get("edgeCount", 0) or 0),
+        entities=int(stats.get("entityCount", 0) or 0),
+        aliased_entities=int(stats.get("aliasedEntityCount", 0) or 0),
+        aliases=int(stats.get("aliasCount", 0) or 0),
+        ambiguous_groups=int(stats.get("ambiguousAliasGroupCount", 0) or 0),
+        ambiguous_entities=int(stats.get("ambiguousEntityCount", 0) or 0),
         isolated=int(stats.get("isolatedPageCount", 0) or 0),
         weak=int(stats.get("weakPageCount", 0) or 0),
         hub_stubs=int(stats.get("hubStubCount", 0) or 0),
@@ -212,19 +269,23 @@ def _console_actions(report: dict[str, object]) -> list[str]:
         actions.append("Reconnect isolated clusters back to the main graph.")
     if int(stats.get("suggestedLinkCount", 0) or 0):
         actions.append("Review suggested links and convert strong candidates into explicit page links.")
+    if int(stats.get("ambiguousAliasGroupCount", 0) or 0):
+        actions.append("Review ambiguous entity merge candidates before changing canonical entity pages.")
     return actions[:4] or ["Graph structure looks stable. Continue expanding high-value pages."]
 
 
 def build_report(graph: dict[str, object]) -> dict[str, object]:
-    nodes = graph.get("nodes", [])
-    edges = graph.get("edges", [])
-    insights = graph.get("insights", {})
+    active_view = _graph_view(graph, "knowledge")
+    nodes = active_view.get("nodes", [])
+    edges = active_view.get("edges", [])
+    insights = active_view.get("insights", {})
     if not isinstance(nodes, list) or not isinstance(edges, list):
         raise SystemExit("Invalid graph payload: nodes/edges are missing.")
     if not isinstance(insights, dict):
         insights = {}
 
     page_nodes = _page_nodes(nodes)
+    entity_nodes = _entity_nodes(nodes)
     page_node_ids = {str(node["id"]) for node in page_nodes}
     filtered_edges = [
         edge for edge in edges
@@ -241,10 +302,35 @@ def build_report(graph: dict[str, object]) -> dict[str, object]:
         item for item in insights.get("suggestedLinks", [])
         if isinstance(item, dict)
     ]
+    isolated_entities = sorted(
+        [
+            {
+                "id": str(node["id"]),
+                "title": str(node.get("label") or node["id"]),
+                "type": "entity",
+                "reason": "This entity node does not connect to any other knowledge nodes yet.",
+            }
+            for node in entity_nodes
+            if not any(
+                str(edge.get("source") or "") == str(node["id"]) or str(edge.get("target") or "") == str(node["id"])
+                for edge in edges
+            )
+        ],
+        key=lambda item: str(item["title"]).lower(),
+    )[:8]
+    alias_count, aliased_entity_count = _entity_alias_stats(entity_nodes)
+    ambiguous_merge_candidates, ambiguous_entity_count = ambiguous_entity_merge_candidates(entity_nodes)
 
     stats = {
+        "view": str(active_view.get("name") or "knowledge"),
         "nodeCount": len(page_nodes),
         "edgeCount": len(filtered_edges),
+        "entityCount": len(entity_nodes),
+        "aliasCount": alias_count,
+        "aliasedEntityCount": aliased_entity_count,
+        "ambiguousAliasGroupCount": len(ambiguous_merge_candidates),
+        "ambiguousEntityCount": ambiguous_entity_count,
+        "isolatedEntityCount": len(isolated_entities),
         "isolatedPageCount": sum(1 for item in isolated_pages if str(item.get("severity", "")) == "isolated"),
         "weakPageCount": sum(1 for item in isolated_pages if str(item.get("severity", "")) == "weak"),
         "bridgePageCount": len([item for item in insights.get("bridgeNodes", []) if isinstance(item, dict)]),
@@ -259,28 +345,40 @@ def build_report(graph: dict[str, object]) -> dict[str, object]:
     top_node = next((item for item in insights.get("topNodes", []) if isinstance(item, dict)), None)
     summary_parts = []
     if top_node:
-        summary_parts.append(f"当前关键页面是 {top_node.get('title', 'n/a')}。")
+        summary_parts.append(f"The current key page is {top_node.get('title', 'n/a')}.")
     if stats["isolatedPageCount"]:
-        summary_parts.append(f"有 {stats['isolatedPageCount']} 个孤立页面需要补链接。")
+        summary_parts.append(f"There are {stats['isolatedPageCount']} isolated pages that need links.")
     elif stats["weakPageCount"]:
-        summary_parts.append(f"有 {stats['weakPageCount']} 个弱连接页面需要继续整理。")
+        summary_parts.append(f"There are {stats['weakPageCount']} weakly connected pages that need more context.")
     else:
-        summary_parts.append("主要页面已经形成基础连接。")
+        summary_parts.append("The main pages already have a basic connection structure.")
     if stats["hubStubCount"]:
-        summary_parts.append(f"有 {stats['hubStubCount']} 个高连接薄内容页面值得优先补强。")
+        summary_parts.append(f"There are {stats['hubStubCount']} high-degree thin pages worth strengthening first.")
     if stats["isolatedClusterCount"]:
-        summary_parts.append(f"当前存在 {stats['isolatedClusterCount']} 个与主图断开的子图。")
+        summary_parts.append(f"There are {stats['isolatedClusterCount']} clusters disconnected from the main graph.")
     if stats["suggestedLinkCount"]:
-        summary_parts.append(f"当前可复核 {stats['suggestedLinkCount']} 条建议补链。")
+        summary_parts.append(f"There are {stats['suggestedLinkCount']} suggested links ready for review.")
+    if stats["entityCount"]:
+        summary_parts.append(f"The graph currently identifies {stats['entityCount']} entity nodes.")
+    if stats["aliasCount"]:
+        summary_parts.append(f"Among them, {stats['aliasedEntityCount']} entities carry aliases for a total of {stats['aliasCount']} alias entries.")
+    if stats["ambiguousAliasGroupCount"]:
+        summary_parts.append(
+            f"There are also {stats['ambiguousAliasGroupCount']} ambiguous alias groups spanning {stats['ambiguousEntityCount']} entity pages. Review them manually."
+        )
 
     report = {
         "generated_at": today_str(),
+        "schemaVersion": str(graph.get("schema_version") or "1"),
+        "view": str(active_view.get("name") or "knowledge"),
         "summary": " ".join(summary_parts),
         "stats": stats,
         "topActions": _top_actions({"stats": stats}),
         "topNodes": insights.get("topNodes", []),
         "bridgeNodes": insights.get("bridgeNodes", []),
         "isolatedPages": isolated_pages,
+        "isolatedEntities": isolated_entities,
+        "ambiguousEntityMergeCandidates": ambiguous_merge_candidates,
         "hubStubs": hub_stubs,
         "fragileBridges": fragile_bridges,
         "isolatedClusters": isolated_clusters,
@@ -302,6 +400,12 @@ def render_report_markdown(report: dict[str, object]) -> str:
         "",
         f"- Pages: {stats['nodeCount']}",
         f"- Relations: {stats['edgeCount']}",
+        f"- Entities: {stats['entityCount']}",
+        f"- Aliased Entities: {stats['aliasedEntityCount']}",
+        f"- Aliases: {stats['aliasCount']}",
+        f"- Ambiguous Alias Groups: {stats['ambiguousAliasGroupCount']}",
+        f"- Ambiguous Entities: {stats['ambiguousEntityCount']}",
+        f"- Isolated Entities: {stats['isolatedEntityCount']}",
         f"- Average Degree: {stats['averageDegree']}",
         f"- Isolated Pages: {stats['isolatedPageCount']}",
         f"- Weak Pages: {stats['weakPageCount']}",
@@ -315,6 +419,22 @@ def render_report_markdown(report: dict[str, object]) -> str:
         "",
     ]
     lines.extend(f"- {item}" for item in report["topActions"])
+    lines.extend(["", "## Entities That Need Links", ""])
+    if report["isolatedEntities"]:
+        lines.extend(
+            f"- {item['title']} | {item['reason']}"
+            for item in report["isolatedEntities"]
+        )
+    else:
+        lines.append("- No isolated entities")
+    lines.extend(["", "## Ambiguous Entity Merge Candidates", ""])
+    if report["ambiguousEntityMergeCandidates"]:
+        lines.extend(
+            f"- key={item['identityKey']} | {', '.join(item['titles'])} | {item['reason']}"
+            for item in report["ambiguousEntityMergeCandidates"]
+        )
+    else:
+        lines.append("- No ambiguous merge candidates")
     lines.extend(["", "## Hub Stubs", ""])
     if report["hubStubs"]:
         lines.extend(
@@ -363,6 +483,12 @@ def _render_html_metric_cards(stats: dict[str, object]) -> str:
     for label, key in [
         ("Pages", "nodeCount"),
         ("Relations", "edgeCount"),
+        ("Entities", "entityCount"),
+        ("Aliased Entities", "aliasedEntityCount"),
+        ("Aliases", "aliasCount"),
+        ("Ambiguous Alias Groups", "ambiguousAliasGroupCount"),
+        ("Ambiguous Entities", "ambiguousEntityCount"),
+        ("Isolated Entities", "isolatedEntityCount"),
         ("Average Degree", "averageDegree"),
         ("Isolated Pages", "isolatedPageCount"),
         ("Weak Pages", "weakPageCount"),
@@ -410,6 +536,8 @@ def render_report_html(report: dict[str, object]) -> str:
     isolated_clusters = report.get("isolatedClusters", [])
     suggested_links = report.get("suggestedLinks", [])
     isolated_pages = report.get("isolatedPages", [])
+    isolated_entities = report.get("isolatedEntities", [])
+    ambiguous_merge_candidates = report.get("ambiguousEntityMergeCandidates", [])
     top_nodes = report.get("topNodes", [])
     bridge_nodes = report.get("bridgeNodes", [])
 
@@ -458,6 +586,24 @@ def render_report_html(report: dict[str, object]) -> str:
             str(item.get("reason") or "High-confidence structural suggestion."),
         ),
     )
+    isolated_entity_cards = _render_html_record_cards(
+        isolated_entities if isinstance(isolated_entities, list) else [],
+        "No isolated entities.",
+        lambda item: (
+            str(item.get("title") or item.get("id") or "Untitled"),
+            str(item.get("type") or "entity"),
+            str(item.get("reason") or ""),
+        ),
+    )
+    ambiguous_merge_cards = _render_html_record_cards(
+        ambiguous_merge_candidates if isinstance(ambiguous_merge_candidates, list) else [],
+        "No ambiguous merge candidates.",
+        lambda item: (
+            ", ".join(str(title) for title in item.get("titles", [])[:3]) or "Untitled",
+            "identity key={}".format(str(item.get("identityKey") or "n/a")),
+            str(item.get("reason") or ""),
+        ),
+    )
     top_node_cards = _render_html_record_cards(
         top_nodes if isinstance(top_nodes, list) else [],
         "No key pages yet.",
@@ -478,7 +624,7 @@ def render_report_html(report: dict[str, object]) -> str:
     )
 
     return """<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -618,6 +764,8 @@ def render_report_html(report: dict[str, object]) -> str:
       <span class="badge">Generated {generated_at}</span>
       <span class="badge">Pages {page_count}</span>
       <span class="badge">Relations {edge_count}</span>
+      <span class="badge">Entities {entity_count}</span>
+      <span class="badge">Aliases {alias_count}</span>
       <span class="badge"><a href="index.html">Open Graph</a></span>
       <span class="badge"><a href="../index.html">Open Workspace Home</a></span>
     </div>
@@ -632,42 +780,52 @@ def render_report_html(report: dict[str, object]) -> str:
     <div class="layout">
       <section class="panel">
         <h2>Top Actions</h2>
-        <p>先处理最影响导航性和可维护性的图谱问题。</p>
+        <p>Start with the graph issues that most affect navigation and maintainability.</p>
         {top_actions}
       </section>
       <section class="panel">
         <h2>Key Pages</h2>
-        <p>优先阅读或补强这些页面，它们对当前图谱结构最关键。</p>
+        <p>Read or strengthen these pages first because they matter most to the current graph structure.</p>
         <div class="records">{top_nodes}</div>
       </section>
       <section class="panel">
         <h2>Bridge Pages</h2>
-        <p>这些页面连接了不同类型或不同主题的区域。</p>
+        <p>These pages connect different node types or topical regions.</p>
         <div class="records">{bridge_nodes}</div>
       </section>
       <section class="panel">
         <h2>Pages That Need Links</h2>
-        <p>这里展示孤立页面和弱连接页面，适合优先补链。</p>
+        <p>This section shows isolated pages and weakly connected pages that should gain links first.</p>
         <div class="records">{isolated_pages}</div>
       </section>
       <section class="panel">
+        <h2>Entities That Need Links</h2>
+        <p>These entities have been identified but still lack enough knowledge-graph connections.</p>
+        <div class="records">{isolated_entities}</div>
+      </section>
+      <section class="panel">
+        <h2>Ambiguous Entity Merge Candidates</h2>
+        <p>These identity keys match multiple entity pages and should be reviewed before any canonical merge.</p>
+        <div class="records">{ambiguous_merge_candidates}</div>
+      </section>
+      <section class="panel">
         <h2>Hub Stubs</h2>
-        <p>关系很多但内容偏薄的页面，补摘要和上下文通常收益最高。</p>
+        <p>These pages have many relations but thin content, so improving summaries and context usually pays off first.</p>
         <div class="records">{hub_stubs}</div>
       </section>
       <section class="panel">
         <h2>Fragile Bridges</h2>
-        <p>只靠少量页面维持跨主题连接的结构点，容易成为单点脆弱处。</p>
+        <p>These structures rely on very few pages to keep cross-topic links alive, which makes them fragile.</p>
         <div class="records">{fragile_bridges}</div>
       </section>
       <section class="panel">
         <h2>Isolated Clusters</h2>
-        <p>这些页面已经形成小片区，但还没有接回主图。</p>
+        <p>These pages already form small clusters but are not connected back to the main graph yet.</p>
         <div class="records">{isolated_clusters}</div>
       </section>
       <section class="panel">
         <h2>Suggested Links</h2>
-        <p>高置信度的候选关系，适合人工复核后转成显式链接。</p>
+        <p>These are high-confidence candidate relations that could become explicit links after review.</p>
         <div class="records">{suggested_links}</div>
       </section>
     </div>
@@ -679,11 +837,15 @@ def render_report_html(report: dict[str, object]) -> str:
         generated_at=escape(str(report.get("generated_at") or "")),
         page_count=escape(str(stats.get("nodeCount", 0) or 0)),
         edge_count=escape(str(stats.get("edgeCount", 0) or 0)),
+        entity_count=escape(str(stats.get("entityCount", 0) or 0)),
+        alias_count=escape(str(stats.get("aliasCount", 0) or 0)),
         metric_cards=_render_html_metric_cards(stats),
         top_actions=_render_html_list([str(item) for item in top_actions] if isinstance(top_actions, list) else []),
         top_nodes=top_node_cards,
         bridge_nodes=bridge_node_cards,
         isolated_pages=isolated_cards,
+        isolated_entities=isolated_entity_cards,
+        ambiguous_merge_candidates=ambiguous_merge_cards,
         hub_stubs=hub_cards,
         fragile_bridges=bridge_cards,
         isolated_clusters=cluster_cards,
@@ -734,6 +896,7 @@ def main() -> int:
     print("Graph report data: output/graph/report.json")
     print("Output hub: output/index.html")
     print(f"Output hub URI: {file_uri(output_home)}")
+    print_output_serve_hint(root)
     return 0
 
 

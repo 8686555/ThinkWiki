@@ -1,6 +1,18 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+"""
+ThinkWiki Script: clip
+
+Purpose:
+- Collect a webpage, file, or raw text into the inbox before formal ingest.
+
+Usage:
+- Prefer `python scripts/thinkwiki clip ...`.
+- Run `python scripts/<script> --help` for direct CLI details when the file exposes its own arguments.
+"""
+
+
 import argparse
 import json
 import shutil

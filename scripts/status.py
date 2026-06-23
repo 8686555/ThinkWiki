@@ -1,6 +1,18 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+"""
+ThinkWiki Script: status
+
+Purpose:
+- Print a compact workspace snapshot with page, inbox, and output summary data.
+
+Usage:
+- Prefer `python scripts/thinkwiki status ...`.
+- Run `python scripts/<script> --help` for direct CLI details when the file exposes its own arguments.
+"""
+
+
 import argparse
 from pathlib import Path
 

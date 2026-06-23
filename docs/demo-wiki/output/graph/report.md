@@ -1,12 +1,18 @@
 # ThinkWiki Graph Report
 
-- Generated: 2026-06-21
-- Summary: 当前关键页面是 AI Native Team。 主要页面已经形成基础连接。 有 1 个高连接薄内容页面值得优先补强。 当前可复核 8 条建议补链。
+- Generated: 2026-06-23
+- Summary: The current key page is AI Native Team. The main pages already have a basic connection structure. There are 1 high-degree thin pages worth strengthening first. There are 8 suggested links ready for review.
 
 ## Health Summary
 
 - Pages: 11
 - Relations: 41
+- Entities: 0
+- Aliased Entities: 0
+- Aliases: 0
+- Ambiguous Alias Groups: 0
+- Ambiguous Entities: 0
+- Isolated Entities: 0
 - Average Degree: 7.45
 - Isolated Pages: 0
 - Weak Pages: 0
@@ -18,12 +24,20 @@
 
 ## Top Actions
 
-- 检查高连接但内容薄弱的页面，补摘要、上下文和来源。
-- 复核建议补链，把高置信度关系转成显式页面链接。
+- Strengthen high-degree thin pages with better summaries, context, and sources.
+- Review suggested links and convert strong candidates into explicit page links.
+
+## Entities That Need Links
+
+- No isolated entities
+
+## Ambiguous Entity Merge Candidates
+
+- No ambiguous merge candidates
 
 ## Hub Stubs
 
-- Model Platform (topic) | degree=8 | 关系数 8 较高，但摘要只有 76 个字符
+- Model Platform (topic) | degree=8 | Degree is 8, but the summary is only 76 characters long.
 
 ## Fragile Bridges
 

@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.6.0
+### Added
+- Added a schema v2 content knowledge graph with `default_view = knowledge`, including page-backed nodes, extracted `claim` nodes, and semantic relations such as `about`, `belongs_to`, `depends_on`, `asserts`, `supports`, `contradicts`, and `suggests_related_to`.
+- Added entity governance to the knowledge graph so page-backed entity nodes now carry aliases, can surface ambiguous identity collisions, and participate in deterministic merge review workflows.
+- Added an `entity-merge-review` command that writes `output/graph/entity-merge-review.{json,md,html}` for manual review of ambiguous entity alias groups.
+- Added `entity-merge-apply` so users can canonicalize one entity page, convert the rest into merged stubs, and rebuild downstream viewer / graph / governance outputs in one deterministic step.
+- Added `entity-merge-apply --dry-run` so users can generate `output/graph/entity-merge-plan.{json,md,html}` before writing any entity pages.
+- Added a `serve` command that exposes `<wiki-root>/output/` over loopback HTTP (default `http://127.0.0.1:8765/`) so agent hosts can browse inbox, viewer, graph, and governance pages in a browser.
+- Added `README.zh.md` as the Chinese project overview alongside the English README.
+
+### Changed
+- Updated HTML workbench outputs (`output/index.html`, inbox, viewer, graph, and governance pages) to English so repository-facing previews and agent-host browsing stay consistent.
+- Refreshed demo wiki outputs and README screenshot assets to match the current English HTML workspace.
+- Rewrote `README.md` and `SKILL.md` around Agent Skills installation and conversational usage, including supported agent hosts and the recommended `serve` workflow for browsing HTML outputs.
+- Updated `graph-report`, `status`, `health`, and `output/index.html` so entity counts, alias counts, ambiguous alias groups, and ambiguous entity counts are surfaced across terminal summaries and HTML workbench outputs.
+- Updated graph construction and ingest so merged entity stubs continue to resolve old titles and aliases to the canonical entity page without polluting the active knowledge graph.
+- Updated the output home so `entity-merge-review.html` and `entity-merge-plan.html` are treated as first-class governance artifacts alongside the graph report.
+
 ## v1.5.1
 ### Changed
 - Updated `graph-report` terminal output to stay ASCII-safe across platforms, preventing Windows CI failures caused by console encoding when the report summary contains non-ASCII text.

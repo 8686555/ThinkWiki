@@ -1,6 +1,18 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+"""
+ThinkWiki Script: batch_ingest
+
+Purpose:
+- Promote multiple inbox items into the wiki in one deterministic run.
+
+Usage:
+- Prefer `python scripts/thinkwiki batch-ingest ...`.
+- Run `python scripts/<script> --help` for direct CLI details when the file exposes its own arguments.
+"""
+
+
 import argparse
 import shutil
 from pathlib import Path

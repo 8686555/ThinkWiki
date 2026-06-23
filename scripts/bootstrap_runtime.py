@@ -1,6 +1,18 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+"""
+ThinkWiki Script: bootstrap_runtime
+
+Purpose:
+- Create or refresh the local Python runtime used by ThinkWiki inside `.venv`.
+
+Usage:
+- Run directly for runtime setup, or let `scripts/thinkwiki` call it automatically.
+- Run `python scripts/<script> --help` for direct CLI details when the file exposes its own arguments.
+"""
+
+
 import argparse
 import json
 import os

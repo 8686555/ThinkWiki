@@ -1,6 +1,18 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+"""
+ThinkWiki Script: init_wiki
+
+Purpose:
+- Initialize a new ThinkWiki workspace with the expected root files and directories.
+
+Usage:
+- Prefer `python scripts/thinkwiki init ...`.
+- Run `python scripts/<script> --help` for direct CLI details when the file exposes its own arguments.
+"""
+
+
 import argparse
 from pathlib import Path
 

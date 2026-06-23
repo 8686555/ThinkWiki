@@ -1,9 +1,18 @@
 {
-  "generated_at": "2026-06-21",
-  "summary": "当前关键页面是 AI Native Team。 主要页面已经形成基础连接。 有 1 个高连接薄内容页面值得优先补强。 当前可复核 8 条建议补链。",
+  "generated_at": "2026-06-23",
+  "schemaVersion": "2",
+  "view": "knowledge",
+  "summary": "The current key page is AI Native Team. The main pages already have a basic connection structure. There are 1 high-degree thin pages worth strengthening first. There are 8 suggested links ready for review.",
   "stats": {
+    "view": "knowledge",
     "nodeCount": 11,
     "edgeCount": 41,
+    "entityCount": 0,
+    "aliasCount": 0,
+    "aliasedEntityCount": 0,
+    "ambiguousAliasGroupCount": 0,
+    "ambiguousEntityCount": 0,
+    "isolatedEntityCount": 0,
     "isolatedPageCount": 0,
     "weakPageCount": 0,
     "bridgePageCount": 5,
@@ -15,8 +24,8 @@
     "averageDegree": 7.45
   },
   "topActions": [
-    "检查高连接但内容薄弱的页面，补摘要、上下文和来源。",
-    "复核建议补链，把高置信度关系转成显式页面链接。"
+    "Strengthen high-degree thin pages with better summaries, context, and sources.",
+    "Review suggested links and convert strong candidates into explicit page links."
   ],
   "topNodes": [
     {
@@ -24,42 +33,42 @@
       "title": "AI Native Team",
       "type": "concept",
       "score": 70,
-      "reason": "总关系 14，入边 7，覆盖 6 种邻居类型"
-    },
-    {
-      "id": "wiki/sources/eval-loops.md",
-      "title": "Eval Loop Notes",
-      "type": "source",
-      "score": 51,
-      "reason": "总关系 9，入边 6，覆盖 4 种邻居类型"
+      "reason": "Degree 14, inbound 7, spanning 6 neighbor types."
     },
     {
       "id": "wiki/concepts/execution-spec.md",
       "title": "Execution Spec",
       "type": "concept",
       "score": 50,
-      "reason": "总关系 10，入边 5，覆盖 4 种邻居类型"
-    },
-    {
-      "id": "wiki/sources/platform-spec.md",
-      "title": "Platform Spec",
-      "type": "source",
-      "score": 49,
-      "reason": "总关系 9，入边 5，覆盖 4 种邻居类型"
+      "reason": "Degree 10, inbound 5, spanning 4 neighbor types."
     },
     {
       "id": "wiki/decisions/execution-policy.md",
       "title": "Execution Policy",
       "type": "decision",
       "score": 46,
-      "reason": "总关系 8，入边 6，覆盖 4 种邻居类型"
+      "reason": "Degree 8, inbound 6, spanning 4 neighbor types."
+    },
+    {
+      "id": "wiki/sources/eval-loops.md",
+      "title": "Eval Loop Notes",
+      "type": "source",
+      "score": 44,
+      "reason": "Degree 8, inbound 6, spanning 3 neighbor types."
+    },
+    {
+      "id": "wiki/sources/platform-spec.md",
+      "title": "Platform Spec",
+      "type": "source",
+      "score": 42,
+      "reason": "Degree 8, inbound 5, spanning 3 neighbor types."
     },
     {
       "id": "wiki/topics/eval-loops.md",
       "title": "Eval Loops",
       "type": "topic",
-      "score": 39,
-      "reason": "总关系 8，入边 3，覆盖 3 种邻居类型"
+      "score": 38,
+      "reason": "Degree 8, inbound 3, spanning 3 neighbor types."
     }
   ],
   "bridgeNodes": [
@@ -68,38 +77,40 @@
       "title": "AI Native Team",
       "type": "concept",
       "score": 35,
-      "reason": "连接了 6 种页面类型，适合作为结构桥梁"
-    },
-    {
-      "id": "wiki/sources/eval-loops.md",
-      "title": "Eval Loop Notes",
-      "type": "source",
-      "score": 28,
-      "reason": "连接了 4 种页面类型，适合作为结构桥梁"
-    },
-    {
-      "id": "wiki/sources/platform-spec.md",
-      "title": "Platform Spec",
-      "type": "source",
-      "score": 28,
-      "reason": "连接了 4 种页面类型，适合作为结构桥梁"
+      "reason": "Connects 6 page types and works well as a bridge."
     },
     {
       "id": "wiki/concepts/execution-spec.md",
       "title": "Execution Spec",
       "type": "concept",
       "score": 25,
-      "reason": "连接了 4 种页面类型，适合作为结构桥梁"
+      "reason": "Connects 4 page types and works well as a bridge."
     },
     {
-      "id": "wiki/sources/review-checklist.md",
-      "title": "Review Checklist",
+      "id": "wiki/decisions/execution-policy.md",
+      "title": "Execution Policy",
+      "type": "decision",
+      "score": 23,
+      "reason": "Connects 4 page types and works well as a bridge."
+    },
+    {
+      "id": "wiki/sources/eval-loops.md",
+      "title": "Eval Loop Notes",
       "type": "source",
-      "score": 25,
-      "reason": "连接了 4 种页面类型，适合作为结构桥梁"
+      "score": 20,
+      "reason": "Connects 3 page types and works well as a bridge."
+    },
+    {
+      "id": "wiki/topics/eval-loops.md",
+      "title": "Eval Loops",
+      "type": "topic",
+      "score": 20,
+      "reason": "Connects 3 page types and works well as a bridge."
     }
   ],
   "isolatedPages": [],
+  "isolatedEntities": [],
+  "ambiguousEntityMergeCandidates": [],
   "hubStubs": [
     {
       "id": "wiki/topics/model-platform.md",
@@ -107,7 +118,7 @@
       "type": "topic",
       "degree": 8,
       "summaryLength": 76,
-      "reason": "关系数 8 较高，但摘要只有 76 个字符"
+      "reason": "Degree is 8, but the summary is only 76 characters long."
     }
   ],
   "fragileBridges": [],

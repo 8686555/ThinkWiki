@@ -1,6 +1,18 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+"""
+ThinkWiki Script: convert_source
+
+Purpose:
+- Convert a source file or webpage into Markdown without writing into a wiki.
+
+Usage:
+- Prefer `python scripts/thinkwiki convert ...`.
+- Run `python scripts/<script> --help` for direct CLI details when the file exposes its own arguments.
+"""
+
+
 import argparse
 import sys
 from pathlib import Path

@@ -1,6 +1,18 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+"""
+ThinkWiki Script: digest
+
+Purpose:
+- Create a synthesis page that combines multiple source pages into one reusable artifact.
+
+Usage:
+- Prefer `python scripts/thinkwiki digest ...`.
+- Run `python scripts/<script> --help` for direct CLI details when the file exposes its own arguments.
+"""
+
+
 import argparse
 import re
 from pathlib import Path

@@ -1,6 +1,18 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+"""
+ThinkWiki Script: build_demo_wiki
+
+Purpose:
+- Generate the demo wiki used for README screenshots and repository-facing examples.
+
+Usage:
+- Run directly when you need to refresh `docs/demo-wiki`.
+- Run `python scripts/<script> --help` for direct CLI details when the file exposes its own arguments.
+"""
+
+
 import argparse
 import json
 import textwrap
@@ -37,7 +49,7 @@ INBOX_METADATA = {
         "captureMode": "wait",
         "captureState": "wait_completed",
         "captureReason": "ready",
-        "reviewHint": "采集结果结构完整，可继续复核后正式 ingest。",
+        "reviewHint": "The capture looks complete enough for final review before formal ingest.",
         "captureAttempts": 2,
         "captureElapsedSeconds": 1.2,
         "mediaPolicy": "always",

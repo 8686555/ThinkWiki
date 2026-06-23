@@ -1,6 +1,18 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+"""
+ThinkWiki Script: correct
+
+Purpose:
+- Save a correction, pitfall, or operational lesson as durable wiki knowledge.
+
+Usage:
+- Prefer `python scripts/thinkwiki correct ...`.
+- Run `python scripts/<script> --help` for direct CLI details when the file exposes its own arguments.
+"""
+
+
 import argparse
 from pathlib import Path
 

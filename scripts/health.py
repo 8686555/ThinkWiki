@@ -1,6 +1,18 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+"""
+ThinkWiki Script: health
+
+Purpose:
+- Run deterministic workspace health checks and summarize the current output state.
+
+Usage:
+- Prefer `python scripts/thinkwiki health ...`.
+- Run `python scripts/<script> --help` for direct CLI details when the file exposes its own arguments.
+"""
+
+
 import argparse
 from pathlib import Path
 
@@ -53,9 +65,26 @@ def main() -> int:
             graph="ready" if bool(graph.get("html_exists")) else "missing",
             inbox="ready" if bool(inbox_output.get("html_exists")) else "missing",
         ),
-        "- Graph Report: {state}, isolatedPages={isolated}, hubStubs={hub_stubs}, fragileBridges={fragile}, clusters={clusters}".format(
+        "- Knowledge Graph: schema=v{schema}, defaultView={default_view}, knowledgeNodes={knowledge_nodes}, claims={claims}, entities={entities}, aliasedEntities={aliased_entities}, aliases={aliases}, ambiguousAliasGroups={ambiguous_groups}, ambiguousEntities={ambiguous_entities}, suggestedEdges={suggested_edges}".format(
+            schema=str(graph.get("schema_version", "") or "1"),
+            default_view=str(graph.get("default_view", "") or "legacy"),
+            knowledge_nodes=int(graph.get("knowledge_node_count", 0) or 0),
+            claims=int(graph.get("claim_count", 0) or 0),
+            entities=int(graph.get("entity_count", 0) or 0),
+            aliased_entities=int(graph.get("aliased_entity_count", 0) or 0),
+            aliases=int(graph.get("alias_count", 0) or 0),
+            ambiguous_groups=int(graph.get("ambiguous_alias_group_count", 0) or 0),
+            ambiguous_entities=int(graph.get("ambiguous_entity_count", 0) or 0),
+            suggested_edges=int(graph.get("suggested_edge_count", 0) or 0),
+        ),
+        "- Graph Report: {state}, isolatedPages={isolated}, isolatedEntities={isolated_entities}, aliasedEntities={aliased_entities}, aliases={aliases}, ambiguousAliasGroups={ambiguous_groups}, ambiguousEntities={ambiguous_entities}, hubStubs={hub_stubs}, fragileBridges={fragile}, clusters={clusters}".format(
             state="ready" if bool(graph.get("report_html_exists")) else "missing",
             isolated=int(graph.get("report_isolated_pages", 0) or 0),
+            isolated_entities=int(graph.get("report_isolated_entities", 0) or 0),
+            aliased_entities=int(graph.get("report_aliased_entities", 0) or 0),
+            aliases=int(graph.get("report_aliases", 0) or 0),
+            ambiguous_groups=int(graph.get("report_ambiguous_alias_groups", 0) or 0),
+            ambiguous_entities=int(graph.get("report_ambiguous_entities", 0) or 0),
             hub_stubs=int(graph.get("report_hub_stubs", 0) or 0),
             fragile=int(graph.get("report_fragile_bridges", 0) or 0),
             clusters=int(graph.get("report_isolated_clusters", 0) or 0),

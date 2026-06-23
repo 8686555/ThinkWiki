@@ -1,6 +1,18 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+"""
+ThinkWiki Script: ingest
+
+Purpose:
+- Import a source file, webpage, or inbox item into the wiki and materialize knowledge pages.
+
+Usage:
+- Prefer `python scripts/thinkwiki ingest ...`.
+- Run `python scripts/<script> --help` for direct CLI details when the file exposes its own arguments.
+"""
+
+
 import argparse
 import gzip
 import html as html_lib
@@ -23,6 +35,7 @@ from runtime_capabilities import missing_dependency_message, missing_modules_for
 from utils import (
     append_log,
     classify_raw_dir,
+    entity_label_keys,
     find_repo_root,
     load_template,
     output_access_lines,
@@ -51,6 +64,20 @@ NOISE_MARKERS = (
 SUMMARY_SECTION_HINTS = {"摘要", "summary", "abstract", "概述", "方案结论"}
 CONTINUATION_ENDINGS = tuple("的了和与及并而按把将向在于为是小会度案等其")
 DECISION_SUMMARY_HINTS = ("不适合", "应按", "应采用", "建议采用", "推荐采用", "换句话说", "核心判断")
+SKIP_CONCEPT_HEADINGS = {"summary", "key points", "connections", "open questions", "claims", "raw source", "extracted markdown", "extracted excerpt"}
+SKIP_ENTITY_LABELS = {
+    "summary",
+    "key points",
+    "key guidance",
+    "connections",
+    "knowledge connections",
+    "claims",
+    "open questions",
+    "raw source",
+    "extracted markdown",
+    "extracted excerpt",
+}
+ENTITY_CANDIDATE_RE = re.compile(r"\b(?:[A-Z][A-Za-z0-9]+|[A-Z]{2,})(?:\s+(?:[A-Z][A-Za-z0-9]+|[A-Z]{2,})){0,2}\b")
 WEB_USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -820,6 +847,333 @@ def source_links_block(topic_path: Path, root: Path, source_paths: list[str]) ->
     return "\n".join(lines)
 
 
+def yaml_list_block(items: list[str]) -> str:
+    if not items:
+        return ""
+    return "\n".join(f"  - {item}" for item in items)
+
+
+def meta_list(value: object) -> list[str]:
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if value:
+        return [str(value).strip()]
+    return []
+
+
+def existing_page_index(root: Path) -> dict[str, str]:
+    index: dict[str, str] = {}
+    for page in sorted((root / "wiki").rglob("*.md")):
+        relative = page.relative_to(root).as_posix()
+        meta, _body = parse_frontmatter(read_text(page))
+        title = str(meta.get("title") or page.stem).strip()
+        for key in {relative.casefold(), page.stem.casefold(), title.casefold()}:
+            if key:
+                index[key] = relative
+    return index
+
+
+def heading_candidates(text: str) -> list[str]:
+    candidates: list[str] = []
+    for raw in body_lines(text):
+        stripped = raw.strip()
+        if not stripped.startswith(("## ", "### ")):
+            continue
+        heading = plain_text(stripped.lstrip("#").strip())
+        if not heading:
+            continue
+        lowered = heading.casefold()
+        if lowered in SKIP_CONCEPT_HEADINGS:
+            continue
+        if len(heading) < 3 or len(heading) > 48:
+            continue
+        candidates.append(heading)
+    return ordered_unique(candidates)[:4]
+
+
+def resolve_related_concepts(root: Path, normalized_text: str) -> list[dict[str, str]]:
+    page_index = existing_page_index(root)
+    concepts: list[dict[str, str]] = []
+    for heading in heading_candidates(normalized_text):
+        target = page_index.get(heading.casefold(), "")
+        if not target.startswith("wiki/concepts/"):
+            continue
+        concepts.append({"title": heading, "path": target})
+    return concepts[:4]
+
+
+def extract_entities(
+    normalized_text: str,
+    *,
+    title: str,
+    topic_name: str,
+    concept_items: list[dict[str, str]],
+) -> list[str]:
+    concept_titles = {item["title"].casefold() for item in concept_items}
+    blocked_labels = {
+        title.strip().casefold(),
+        topic_name.strip().casefold(),
+        *concept_titles,
+    }
+    occurrence_count: dict[str, int] = {}
+    segments = [str(block["text"]) for block in merge_adjacent_blocks(cleaned_content_blocks(normalized_text))]
+    if not segments:
+        segments = [normalized_text]
+    for segment in segments:
+        for match in ENTITY_CANDIDATE_RE.findall(segment):
+            candidate = match.strip()
+            if candidate:
+                occurrence_count[candidate] = occurrence_count.get(candidate, 0) + 1
+
+    entities: list[str] = []
+    for candidate, count in occurrence_count.items():
+        normalized = plain_text(candidate)
+        if not normalized:
+            continue
+        lowered = normalized.casefold()
+        if lowered in blocked_labels or lowered in SKIP_ENTITY_LABELS:
+            continue
+        if len(normalized) < 3 or len(normalized) > 40:
+            continue
+        parts = normalized.split()
+        if len(parts) == 1:
+            token = parts[0]
+            strong_shape = (
+                bool(re.search(r"[a-z][A-Z]", token))
+                or token.isupper()
+                or any(char.isdigit() for char in token)
+                or token.endswith("AI")
+                or token.startswith("Think")
+            )
+            if not strong_shape and count < 2:
+                continue
+        entities.append(normalized)
+    return ordered_unique(entities)[:4]
+
+
+def claim_items(summary: str, bullets: list[str]) -> list[dict[str, str]]:
+    items: list[dict[str, str]] = []
+    if summary and summary != "Imported source.":
+        items.append({"text": summary, "confidence": "high"})
+    for bullet in bullets:
+        if not bullet or bullet == summary:
+            continue
+        items.append({"text": bullet, "confidence": "medium"})
+    deduped: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in items:
+        key = item["text"].strip().casefold()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        deduped.append(item)
+    return deduped[:3]
+
+
+def frontmatter_claim_block(items: list[dict[str, str]]) -> str:
+    if not items:
+        return ""
+    lines: list[str] = []
+    for item in items:
+        lines.append(f"  - text: {item['text']}")
+        lines.append(f"    confidence: {item['confidence']}")
+    return "\n".join(lines)
+
+
+def markdown_claim_block(items: list[dict[str, str]]) -> str:
+    if not items:
+        return "- (pending)"
+    return "\n".join(f"- [{item['confidence']}] {item['text']}" for item in items)
+
+
+def markdown_link_block(page_path: Path, items: list[tuple[str, Path | None]]) -> str:
+    lines: list[str] = []
+    for label, target_path in items:
+        clean_label = label.strip()
+        if not clean_label:
+            continue
+        if target_path is None:
+            lines.append(f"- {clean_label}")
+            continue
+        relative = Path(os.path.relpath(target_path, start=page_path.parent)).as_posix()
+        lines.append(f"- [{clean_label}]({relative})")
+    return "\n".join(lines) if lines else "- (pending)"
+
+
+def find_existing_entity_page(root: Path, entity_label: str) -> Path | None:
+    entity_dir = root / "wiki" / "entities"
+    normalized_label = plain_text(entity_label).strip()
+    if not normalized_label:
+        return None
+    slug_candidate = entity_dir / f"{slugify(normalized_label, 'entity')}.md"
+    if slug_candidate.exists():
+        return slug_candidate
+    if not entity_dir.exists():
+        return None
+    candidate_keys = set(entity_label_keys(normalized_label))
+    if not candidate_keys:
+        return None
+    matches: list[tuple[int, Path]] = []
+    for page in sorted(entity_dir.glob("*.md")):
+        meta, _body = parse_frontmatter(read_text(page))
+        canonical_target = str(meta.get("canonical_entity") or "").strip()
+        candidate_page = page
+        if str(meta.get("status") or "").strip().casefold() == "merged" and canonical_target:
+            canonical_path = root / canonical_target
+            if canonical_path.exists():
+                candidate_page = canonical_path
+        labels = [
+            str(meta.get("title") or page.stem).strip(),
+            *meta_list(meta.get("aliases", [])),
+        ]
+        page_keys: set[str] = set()
+        for label in labels:
+            page_keys.update(entity_label_keys(plain_text(label).strip()))
+        overlap = candidate_keys & page_keys
+        if overlap:
+            matches.append((len(overlap), candidate_page))
+    if not matches:
+        return None
+    matches.sort(key=lambda item: (-item[0], item[1].as_posix()))
+    deduped_matches: list[tuple[int, Path]] = []
+    seen_paths: set[str] = set()
+    for score, match_path in matches:
+        key = match_path.as_posix()
+        if key in seen_paths:
+            continue
+        seen_paths.add(key)
+        deduped_matches.append((score, match_path))
+    matches = deduped_matches
+    if len(matches) > 1 and matches[0][0] == matches[1][0]:
+        return None
+    return matches[0][1]
+
+
+def ensure_entity_page(
+    root: Path,
+    entity_label: str,
+    source_page: Path,
+    topic_name: str,
+    topic_page: Path | None,
+) -> dict[str, str]:
+    normalized_label = plain_text(entity_label).strip()
+    existing_page = find_existing_entity_page(root, normalized_label)
+    entity_path = existing_page or (root / "wiki" / "entities" / f"{slugify(normalized_label, 'entity')}.md")
+    existing_meta: dict[str, object] = {}
+    if entity_path.exists():
+        existing_meta, _body = parse_frontmatter(read_text(entity_path))
+
+    entity_title = str(existing_meta.get("title") or normalized_label).strip() or normalized_label
+    entity_summary = str(existing_meta.get("summary") or "").strip() or f"{entity_title} is an entity tracked in ThinkWiki."
+    created = str(existing_meta.get("created") or today_str()).strip() or today_str()
+    source_repo_path = source_page.relative_to(root).as_posix()
+    merged_sources = ordered_unique(meta_list(existing_meta.get("sources", [])) + [source_repo_path])
+    merged_aliases = ordered_unique(
+        meta_list(existing_meta.get("aliases", []))
+        + ([normalized_label] if normalized_label.casefold() != entity_title.casefold() else [])
+    )
+    merged_topics = ordered_unique(
+        meta_list(existing_meta.get("topics", []))
+        + ([topic_name.strip()] if topic_name.strip() else [])
+    )
+    content = render_template(load_template("pages/entity.md"), {
+        "TITLE": entity_title,
+        "DATE": created,
+        "UPDATED": today_str(),
+        "SUMMARY": entity_summary,
+        "SOURCE_ITEMS": source_items_block(merged_sources),
+        "SOURCE_LINKS": source_links_block(entity_path, root, merged_sources),
+        "ALIAS_ITEMS": yaml_list_block(merged_aliases),
+        "ALIAS_MARKDOWN": "\n".join(f"- {item}" for item in merged_aliases) or "- (pending)",
+        "TOPIC_ITEMS": yaml_list_block(merged_topics),
+        "TOPIC_LINKS": markdown_link_block(
+            entity_path,
+            [(topic_name.strip(), topic_page)] if topic_name.strip() else [],
+        ),
+    })
+    write_text(entity_path, content)
+    return {
+        "title": entity_title,
+        "path": entity_path.relative_to(root).as_posix(),
+    }
+
+
+def source_connection_links(
+    *,
+    topic_name: str,
+    topic_page: Path | None,
+    concept_items: list[dict[str, str]],
+    entity_pages: list[dict[str, str]],
+) -> str:
+    lines: list[str] = []
+    if topic_name and topic_page is not None:
+        lines.append(f"- belongs_to: [[{topic_name}]]")
+    for item in concept_items:
+        lines.append(f"- related_to: [[{item['title']}]]")
+    for item in entity_pages:
+        lines.append(f"- about: [[{item['title']}]]")
+    return "\n".join(lines) if lines else "- (pending)"
+
+
+def render_source_page_content(
+    *,
+    root: Path,
+    source_page: Path,
+    title: str,
+    date: str,
+    summary: str,
+    raw_path: Path,
+    normalized_path: Path,
+    normalized_text: str,
+    bullets: list[str],
+    related_links: str,
+    topic_name: str,
+    concept_items: list[dict[str, str]],
+    entity_items: list[str],
+    entity_pages: list[dict[str, str]],
+    topic_page: Path | None,
+    confidence: str,
+    status: str,
+) -> str:
+    claims = claim_items(summary, bullets)
+    entity_markdown = markdown_link_block(
+        source_page,
+        [
+            (
+                item["title"],
+                root / str(item["path"]),
+            )
+            for item in entity_pages
+        ],
+    ) if entity_pages else "\n".join(f"- {item}" for item in entity_items) or "- (pending)"
+    return render_template(load_template("pages/source.md"), {
+        "TITLE": title,
+        "DATE": date,
+        "SUMMARY": summary,
+        "RAW_PATH": raw_path.relative_to(root).as_posix(),
+        "TOPIC_ITEMS": yaml_list_block([topic_name] if topic_name else []),
+        "ENTITY_ITEMS": yaml_list_block(entity_items),
+        "CONCEPT_ITEMS": yaml_list_block([item["title"] for item in concept_items]),
+        "CLAIM_ITEMS": frontmatter_claim_block(claims),
+        "KEY_POINTS": "\n".join(f"- {item}" for item in bullets) or "- (pending)",
+        "RAW_LINKS": build_link(raw_path, root),
+        "NORMALIZED_LINKS": build_link(normalized_path, root),
+        "EXTRACTED_EXCERPT": excerpt_markdown(normalized_text),
+        "RELATED_LINKS": related_links,
+        "ENTITY_MARKDOWN": entity_markdown,
+        "CONNECTION_ITEMS": source_connection_links(
+            topic_name=topic_name,
+            topic_page=topic_page,
+            concept_items=concept_items,
+            entity_pages=entity_pages,
+        ),
+        "CLAIM_MARKDOWN": markdown_claim_block(claims),
+        "OPEN_QUESTIONS": "",
+        "CONFIDENCE": confidence,
+        "STATUS": status,
+    })
+
+
 def find_existing_source_page(root: Path, title: str, slug: str) -> Path | None:
     page_dir = root / "wiki" / "sources"
     slug_candidate = page_dir / f"{slug}.md"
@@ -883,6 +1237,7 @@ def ingest_local_source(
     source_page = find_existing_source_page(root, title, slug) or (root / "wiki" / "sources" / f"{slug}.md")
     related_links = ""
     touched = [source_page.relative_to(root).as_posix()]
+    topic_page: Path | None = None
     if topic.strip():
         topic_page = ensure_topic_page(root, topic.strip(), source_page, summary)
         related_links = f"- [{topic.strip()}](../topics/{topic_page.name})"
@@ -890,20 +1245,47 @@ def ingest_local_source(
 
     resolved_confidence = confidence.strip() or "extracted"
     resolved_status = status.strip() or "active"
-    source_content = render_template(load_template("pages/source.md"), {
-        "TITLE": title,
-        "DATE": today_str(),
-        "SUMMARY": summary,
-        "RAW_PATH": raw_path.relative_to(root).as_posix(),
-        "KEY_POINTS": "\n".join(f"- {item}" for item in bullets),
-        "RAW_LINKS": build_link(raw_path, root),
-        "NORMALIZED_LINKS": build_link(normalized_path, root),
-        "EXTRACTED_EXCERPT": excerpt_markdown(normalized_text),
-        "RELATED_LINKS": related_links,
-        "OPEN_QUESTIONS": "",
-        "CONFIDENCE": resolved_confidence,
-        "STATUS": resolved_status,
-    })
+    concept_items = resolve_related_concepts(root, normalized_text)
+    entity_items = extract_entities(
+        normalized_text,
+        title=title,
+        topic_name=topic.strip(),
+        concept_items=concept_items,
+    )
+    entity_pages = [
+        ensure_entity_page(
+            root,
+            entity_label,
+            source_page,
+            topic.strip(),
+            topic_page,
+        )
+        for entity_label in entity_items
+    ]
+    touched.extend(
+        item["path"]
+        for item in entity_pages
+        if item["path"] not in touched
+    )
+    source_content = render_source_page_content(
+        root=root,
+        source_page=source_page,
+        title=title,
+        date=today_str(),
+        summary=summary,
+        raw_path=raw_path,
+        normalized_path=normalized_path,
+        normalized_text=normalized_text,
+        bullets=bullets,
+        related_links=related_links,
+        topic_name=topic.strip(),
+        concept_items=concept_items,
+        entity_items=entity_items,
+        entity_pages=entity_pages,
+        topic_page=topic_page,
+        confidence=resolved_confidence,
+        status=resolved_status,
+    )
     write_text(source_page, source_content)
     return {
         "title": title,
@@ -1022,26 +1404,49 @@ def main() -> int:
     confidence = args.confidence.strip() or ("mixed" if args.text else "extracted")
     status = args.status.strip() or "active"
     source_page = find_existing_source_page(root, title, slug) or (root / "wiki" / "sources" / f"{slug}.md")
-    source_content = render_template(load_template("pages/source.md"), {
-        "TITLE": title,
-        "DATE": today_str(),
-        "SUMMARY": summary,
-        "RAW_PATH": raw_path.relative_to(root).as_posix(),
-        "KEY_POINTS": "\n".join(f"- {item}" for item in bullets),
-        "RAW_LINKS": build_link(raw_path, root),
-        "NORMALIZED_LINKS": build_link(normalized_path, root),
-        "EXTRACTED_EXCERPT": excerpt_markdown(raw_text),
-        "RELATED_LINKS": "",
-        "OPEN_QUESTIONS": "",
-        "CONFIDENCE": confidence,
-        "STATUS": status,
-    })
+    concept_items = resolve_related_concepts(root, raw_text)
+    entity_items = extract_entities(
+        raw_text,
+        title=title,
+        topic_name=args.topic.strip(),
+        concept_items=concept_items,
+    )
+    entity_pages = [
+        ensure_entity_page(
+            root,
+            entity_label,
+            source_page,
+            args.topic.strip(),
+            None,
+        )
+        for entity_label in entity_items
+    ]
+    source_content = render_source_page_content(
+        root=root,
+        source_page=source_page,
+        title=title,
+        date=today_str(),
+        summary=summary,
+        raw_path=raw_path,
+        normalized_path=normalized_path,
+        normalized_text=raw_text,
+        bullets=bullets,
+        related_links="",
+        topic_name=args.topic.strip(),
+        concept_items=concept_items,
+        entity_items=entity_items,
+        entity_pages=entity_pages,
+        topic_page=None,
+        confidence=confidence,
+        status=status,
+    )
     write_text(source_page, source_content)
     write_text(root / "index.md", rebuild_index.build_index(root))
     append_log(root, f"[{today_str()}] ingest | {title}", [
         f"- raw: {raw_path.relative_to(root).as_posix()}",
         f"- normalized: {normalized_path.relative_to(root).as_posix()}",
         f"- created: {source_page.relative_to(root).as_posix()}",
+        *[f"- created: {item['path']}" for item in entity_pages],
     ])
     print(f"Ingested {title}")
     for line in output_access_lines(root):

@@ -10,7 +10,10 @@ import sys
 import tempfile
 import textwrap
 import threading
+import time
 import unittest
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 
@@ -473,19 +476,20 @@ class ThinkWikiRegressionTest(unittest.TestCase):
             run_script("build_graph.py", "--root", str(root))
             graph = json.loads((root / "output" / "graph" / "graph.json").read_text(encoding="utf-8"))
             node_by_id = {node["id"]: node for node in graph["nodes"]}
+            document_edges = graph["views"]["document"]["edges"]
 
             self.assertEqual(node_by_id["wiki/sources/platform-spec.md"]["type"], "source")
             self.assertEqual(node_by_id["wiki/sources/platform-spec.md"]["summary"], "Source summary.")
             self.assertEqual(node_by_id["wiki/sources/platform-spec.md"]["confidence"], "extracted")
             self.assertEqual(node_by_id["wiki/sources/platform-spec.md"]["status"], "active")
             self.assertEqual(node_by_id["wiki/sources/platform-spec.md"]["path"], "wiki/sources/platform-spec.md")
-            self.assertIn(
-                {
-                    "source": "wiki/topics/platform.md",
-                    "target": "wiki/sources/platform-spec.md",
-                    "type": "includes",
-                },
-                graph["edges"],
+            self.assertTrue(
+                any(
+                    edge["source"] == "wiki/topics/platform.md"
+                    and edge["target"] == "wiki/sources/platform-spec.md"
+                    and edge["type"] == "includes"
+                    for edge in document_edges
+                )
             )
 
     def test_graph_build_writes_html_viewer(self) -> None:
@@ -529,13 +533,13 @@ class ThinkWikiRegressionTest(unittest.TestCase):
             self.assertIn("../viewer/index.html#page=", html_text)
             self.assertIn('id="graphStage"', html_text)
             self.assertIn("centerNodeInStage", html_text)
-            self.assertIn("关系图例", html_text)
+            self.assertIn("Legend", html_text)
             self.assertIn("edgeStyles", html_text)
             self.assertIn('id="scopeFilter"', html_text)
             self.assertIn("scopeFilterEl", html_text)
             self.assertIn("edgeType-references", html_text)
             self.assertIn("enabledEdgeTypes", html_text)
-            self.assertIn("快速聚焦", html_text)
+            self.assertIn("Quick Focus", html_text)
             self.assertIn("syncFocusButtons", html_text)
             self.assertIn('data-focus-type="concept"', html_text)
             self.assertIn("edgeStatsForNode", html_text)
@@ -547,6 +551,14 @@ class ThinkWikiRegressionTest(unittest.TestCase):
             self.assertIn("suggestionKey", html_text)
             self.assertIn("renderInsights", html_text)
             self.assertIn("stroke-dasharray", html_text)
+            self.assertIn('id="viewNameValue">knowledge</span>', html_text)
+            self.assertIn("Schema: ", html_text)
+            self.assertIn('data-focus-type="claim"', html_text)
+            self.assertIn('data-view-mode="knowledge"', html_text)
+            self.assertIn('data-view-mode="document"', html_text)
+            self.assertIn('data-view-mode="suggested"', html_text)
+            self.assertIn("refreshViewState", html_text)
+            self.assertIn("syncModeButtons", html_text)
             self.assertTrue((root / "output" / "index.html").exists())
             self.assertIn("output/graph/index.html", (root / "log.md").read_text(encoding="utf-8"))
 
@@ -652,6 +664,123 @@ class ThinkWikiRegressionTest(unittest.TestCase):
                 )
             )
 
+    def test_graph_build_writes_v2_knowledge_view_with_claims_and_explicit_relations(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir) / "wiki"
+            write_text(root / ".wiki-schema.md", "# marker")
+            (root / "wiki" / "sources").mkdir(parents=True, exist_ok=True)
+            (root / "wiki" / "topics").mkdir(parents=True, exist_ok=True)
+            (root / "wiki" / "concepts").mkdir(parents=True, exist_ok=True)
+            (root / "output" / "graph").mkdir(parents=True, exist_ok=True)
+            write_text(
+                root / "wiki" / "sources" / "platform-spec.md",
+                """
+                ---
+                title: Platform Spec
+                type: source
+                created: 2026-06-22
+                updated: 2026-06-22
+                summary: Source backing for execution rules.
+                sources:
+                  - raw/articles/platform.pdf
+                confidence: extracted
+                status: active
+                ---
+
+                # Platform Spec
+                """,
+            )
+            write_text(
+                root / "wiki" / "topics" / "platform.md",
+                """
+                ---
+                title: Platform
+                type: topic
+                created: 2026-06-22
+                updated: 2026-06-22
+                summary: Platform topic.
+                sources:
+                  - wiki/sources/platform-spec.md
+                confidence: mixed
+                status: active
+                ---
+
+                # Platform
+                """,
+            )
+            write_text(
+                root / "wiki" / "concepts" / "review-loop.md",
+                """
+                ---
+                title: Review Loop
+                type: concept
+                created: 2026-06-22
+                updated: 2026-06-22
+                summary: Review loop concept.
+                sources:
+                  - wiki/sources/platform-spec.md
+                confidence: inferred
+                status: active
+                ---
+
+                # Review Loop
+                """,
+            )
+            write_text(
+                root / "wiki" / "concepts" / "execution-spec.md",
+                """
+                ---
+                title: Execution Spec
+                type: concept
+                created: 2026-06-22
+                updated: 2026-06-22
+                summary: Execution structure for reliable delivery.
+                sources:
+                  - wiki/sources/platform-spec.md
+                topics:
+                  - Platform
+                concepts:
+                  - Review Loop
+                graph:
+                  explicit_relations:
+                    - type: depends_on
+                      target: wiki/concepts/review-loop.md
+                claims:
+                  - text: Execution quality depends on explicit review loops.
+                    confidence: high
+                    supports:
+                      - wiki/sources/platform-spec.md
+                confidence: inferred
+                status: active
+                ---
+
+                # Execution Spec
+
+                ## Connections
+                - related_to: [[Review Loop]]
+                """,
+            )
+
+            run_script("build_graph.py", "--root", str(root))
+            graph = json.loads((root / "output" / "graph" / "graph.json").read_text(encoding="utf-8"))
+
+            self.assertEqual(graph["schema_version"], "2")
+            self.assertEqual(graph["default_view"], "knowledge")
+            self.assertIn("views", graph)
+            self.assertNotIn("claim", {node["type"] for node in graph["nodes"]})
+
+            knowledge = graph["views"]["knowledge"]
+            knowledge_node_ids = {node["id"] for node in knowledge["nodes"]}
+            knowledge_edge_types = {edge["type"] for edge in knowledge["edges"]}
+
+            self.assertIn("claim:wiki/concepts/execution-spec.md#1", knowledge_node_ids)
+            self.assertIn("belongs_to", knowledge_edge_types)
+            self.assertIn("about", knowledge_edge_types)
+            self.assertIn("depends_on", knowledge_edge_types)
+            self.assertIn("asserts", knowledge_edge_types)
+            self.assertIn("supports", knowledge_edge_types)
+            self.assertEqual(knowledge["insights"]["stats"]["nodeCount"], 4)
+
     def test_graph_report_integrates_with_status_health_and_home(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir) / "wiki"
@@ -668,6 +797,8 @@ class ThinkWikiRegressionTest(unittest.TestCase):
                 summary: Tiny.
                 sources:
                   - raw/articles/platform.pdf
+                entities:
+                  - OpenClaw
                 tags:
                   - source
                 confidence: extracted
@@ -675,6 +806,57 @@ class ThinkWikiRegressionTest(unittest.TestCase):
                 ---
 
                 # Platform Spec
+                """,
+            )
+            write_text(
+                root / "wiki" / "entities" / "openclaw.md",
+                """
+                ---
+                title: OpenClaw
+                type: entity
+                created: 2026-06-21
+                updated: 2026-06-21
+                summary: OpenClaw entity page.
+                sources:
+                  - wiki/sources/platform-spec.md
+                aliases:
+                  - OpenClaw Platform
+                  - OpenClaw System
+                topics:
+                  - Platform
+                tags:
+                  - entity
+                confidence: mixed
+                status: active
+                maturity: emerging
+                ---
+
+                # OpenClaw
+                """,
+            )
+            write_text(
+                root / "wiki" / "entities" / "openclaw-platform.md",
+                """
+                ---
+                title: OpenClaw Platform
+                type: entity
+                created: 2026-06-21
+                updated: 2026-06-21
+                summary: Alternate entity page that should now be flagged as an ambiguous merge candidate.
+                sources:
+                  - wiki/sources/platform-spec.md
+                aliases:
+                  - OpenClaw Delivery Platform
+                topics:
+                  - Platform
+                tags:
+                  - entity
+                confidence: mixed
+                status: active
+                maturity: emerging
+                ---
+
+                # OpenClaw Platform
                 """,
             )
             write_text(
@@ -824,47 +1006,107 @@ class ThinkWikiRegressionTest(unittest.TestCase):
             run_script("build_graph.py", "--root", str(root))
 
             result = run_thinkwiki("graph-report", "--root", str(root))
+            entity_review_result = run_thinkwiki("entity-merge-review", "--root", str(root))
 
             report_json_path = root / "output" / "graph" / "report.json"
             report_md_path = root / "output" / "graph" / "report.md"
             report_html_path = root / "output" / "graph" / "report.html"
+            entity_review_json_path = root / "output" / "graph" / "entity-merge-review.json"
+            entity_review_md_path = root / "output" / "graph" / "entity-merge-review.md"
+            entity_review_html_path = root / "output" / "graph" / "entity-merge-review.html"
             self.assertTrue(report_json_path.exists())
             self.assertTrue(report_md_path.exists())
             self.assertTrue(report_html_path.exists())
+            self.assertTrue(entity_review_json_path.exists())
+            self.assertTrue(entity_review_md_path.exists())
+            self.assertTrue(entity_review_html_path.exists())
             report = json.loads(report_json_path.read_text(encoding="utf-8"))
             stats = report["stats"]
+            entity_review = json.loads(entity_review_json_path.read_text(encoding="utf-8"))
 
             self.assertIn("ThinkWiki Graph Report", result.stdout)
             self.assertIn("Graph report: output/graph/report.html", result.stdout)
+            self.assertIn("ThinkWiki Entity Merge Review", entity_review_result.stdout)
+            self.assertIn("Entity merge review: output/graph/entity-merge-review.html", entity_review_result.stdout)
             self.assertEqual(stats["isolatedPageCount"], 1)
-            self.assertEqual(stats["hubStubCount"], 1)
+            self.assertGreaterEqual(stats["hubStubCount"], 1)
             self.assertEqual(stats["isolatedClusterCount"], 1)
             self.assertGreaterEqual(stats["fragileBridgeCount"], 1)
-            self.assertTrue(any("孤立页面" in item for item in report["topActions"]))
+            self.assertGreaterEqual(stats["entityCount"], 1)
+            self.assertGreaterEqual(stats["aliasedEntityCount"], 1)
+            self.assertGreaterEqual(stats["aliasCount"], 2)
+            self.assertGreaterEqual(stats["ambiguousAliasGroupCount"], 1)
+            self.assertGreaterEqual(stats["ambiguousEntityCount"], 2)
+            self.assertTrue(report["ambiguousEntityMergeCandidates"])
+            self.assertTrue(any(item["identityKey"] == "openclaw" for item in report["ambiguousEntityMergeCandidates"]))
+            self.assertEqual(entity_review["stats"]["ambiguousAliasGroupCount"], stats["ambiguousAliasGroupCount"])
+            self.assertTrue(any(item["identityKey"] == "openclaw" for item in entity_review["candidates"]))
+            self.assertTrue(any("isolated pages" in item for item in report["topActions"]))
 
             status_result = run_thinkwiki("status", "--root", str(root))
             self.assertIn("Graph Report: ready", status_result.stdout)
             self.assertIn("isolatedPages=1", status_result.stdout)
-            self.assertIn("hubStubs=1", status_result.stdout)
+            self.assertIn("isolatedEntities=", status_result.stdout)
+            self.assertIn("aliasedEntities=", status_result.stdout)
+            self.assertIn("aliases=", status_result.stdout)
+            self.assertIn("ambiguousAliasGroups=", status_result.stdout)
+            self.assertIn("ambiguousEntities=", status_result.stdout)
+            self.assertIn("hubStubs=", status_result.stdout)
             self.assertIn("clusters=1", status_result.stdout)
+            self.assertIn("schema=v2", status_result.stdout)
+            self.assertIn("defaultView=knowledge", status_result.stdout)
+            self.assertIn("claims=", status_result.stdout)
+            self.assertIn("entities=", status_result.stdout)
 
             health_result = run_thinkwiki("health", "--root", str(root))
-            self.assertIn("Graph Report: ready, isolatedPages=1, hubStubs=1", health_result.stdout)
+            self.assertIn("Knowledge Graph: schema=v2, defaultView=knowledge", health_result.stdout)
+            self.assertIn("entities=", health_result.stdout)
+            self.assertIn("aliasedEntities=", health_result.stdout)
+            self.assertIn("aliases=", health_result.stdout)
+            self.assertIn("ambiguousAliasGroups=", health_result.stdout)
+            self.assertIn("ambiguousEntities=", health_result.stdout)
+            self.assertIn("Graph Report: ready, isolatedPages=1, isolatedEntities=", health_result.stdout)
             self.assertIn("- Errors: 0", health_result.stdout)
             self.assertIn("- Warnings: 0", health_result.stdout)
 
             hub_html = (root / "output" / "index.html").read_text(encoding="utf-8")
-            self.assertIn("图谱治理报告", hub_html)
+            self.assertIn("Graph Governance Report", hub_html)
             self.assertIn("graph/report.html", hub_html)
-            self.assertIn("Hub Stubs 1 个", hub_html)
-            self.assertIn("Isolated Clusters 1 个", hub_html)
-            self.assertIn("优先处理孤立页面", hub_html)
+            self.assertIn("graph/entity-merge-review.html", hub_html)
+            self.assertIn("Hub Stubs", hub_html)
+            self.assertIn("Isolated Clusters 1", hub_html)
+            self.assertIn("Fix isolated pages first", hub_html)
+            self.assertIn("Graph Schema v2", hub_html)
+            self.assertIn("Default View knowledge", hub_html)
+            self.assertIn("Claims", hub_html)
+            self.assertIn("Entities", hub_html)
+            self.assertIn("Aliased Entities", hub_html)
+            self.assertIn("Aliases", hub_html)
+            self.assertIn("Ambiguous Alias Groups", hub_html)
+            self.assertIn("Ambiguous Entities", hub_html)
+            self.assertIn("Ambiguous Alias Groups", hub_html)
+            self.assertIn("Entity Merge Review", hub_html)
+            self.assertIn("Review Entity Merge Candidates", hub_html)
+            self.assertIn("Isolated Entities", hub_html)
 
             report_html = report_html_path.read_text(encoding="utf-8")
             self.assertIn("ThinkWiki Graph Report", report_html)
+            self.assertIn("Entities", report_html)
+            self.assertIn("Aliased Entities", report_html)
+            self.assertIn("Aliases", report_html)
+            self.assertIn("Ambiguous Alias Groups", report_html)
+            self.assertIn("Ambiguous Entities", report_html)
+            self.assertIn("Ambiguous Entity Merge Candidates", report_html)
+            self.assertIn("Entities That Need Links", report_html)
             self.assertIn("Pages That Need Links", report_html)
             self.assertIn("Hub Stubs", report_html)
             self.assertIn("Open Workspace Home", report_html)
+
+            entity_review_html = entity_review_html_path.read_text(encoding="utf-8")
+            self.assertIn("ThinkWiki Entity Merge Review", entity_review_html)
+            self.assertIn("Ambiguous Alias Groups", entity_review_html)
+            self.assertIn("Candidates", entity_review_html)
+            self.assertIn("Open Workspace Home", entity_review_html)
 
     def test_output_hub_shows_wiki_stats(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -929,21 +1171,26 @@ class ThinkWikiRegressionTest(unittest.TestCase):
 
             hub_html = (root / "output" / "index.html").read_text(encoding="utf-8")
             self.assertIn("Demo Knowledge Base", hub_html)
-            self.assertIn("知识工作台首页", hub_html)
-            self.assertIn(">2</strong><span>页面数</span>", hub_html)
-            self.assertIn(">3</strong><span>图节点</span>", hub_html)
-            self.assertIn(">3</strong><span>图关系</span>", hub_html)
+            self.assertIn("Workspace Home", hub_html)
+            self.assertIn(">2</strong><span>Pages</span>", hub_html)
+            self.assertIn(">2</strong><span>Graph Nodes</span>", hub_html)
+            self.assertIn(">2</strong><span>Graph Edges</span>", hub_html)
+            self.assertIn(">0</strong><span>Claims</span>", hub_html)
+            self.assertIn(">0</strong><span>Entities</span>", hub_html)
             self.assertIn("What Changed", hub_html)
             self.assertIn("Next Actions", hub_html)
             self.assertIn("Needs Attention", hub_html)
             self.assertIn("Graph Snapshot", hub_html)
             self.assertIn("Featured Pages", hub_html)
             self.assertIn("Outputs Overview", hub_html)
-            self.assertIn("从这里开始", hub_html)
+            self.assertIn("Start here", hub_html)
             self.assertIn("Alpha Source", hub_html)
             self.assertIn("Beta Topic", hub_html)
             self.assertIn("viewer/index.html#page=wiki/topics/beta.md", hub_html)
-            self.assertIn("当前最关键的页面是", hub_html)
+            self.assertIn("Current key page:", hub_html)
+            self.assertIn("Graph Schema v2", hub_html)
+            self.assertIn("Default View knowledge", hub_html)
+            self.assertIn("Entities", hub_html)
 
     def test_directory_ingest_updates_topic_sources(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -960,6 +1207,442 @@ class ThinkWikiRegressionTest(unittest.TestCase):
             self.assertIn("wiki/sources/b.md", topic_text)
             self.assertIn("[a](../sources/a.md)", topic_text)
             self.assertIn("[b](../sources/b.md)", topic_text)
+
+    def test_ingest_writes_structured_knowledge_fields_and_graph_relations(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir) / "wiki"
+            source = Path(tmp_dir) / "execution-spec.md"
+            write_text(
+                source,
+                """
+                # Execution Spec
+
+                Reliable delivery in OpenClaw depends on explicit review loops and clear execution boundaries.
+
+                ## Review Loop
+
+                Teams using Claude Code in OpenClaw should keep a review loop before finalizing important changes.
+
+                ## Key Guidance
+
+                Keep scope visible and reviewable in ThinkWiki.
+                """,
+            )
+            run_script("init_wiki.py", "--root", str(root), "--title", "Test Wiki")
+            write_text(
+                root / "wiki" / "concepts" / "review-loop.md",
+                """
+                ---
+                title: Review Loop
+                type: concept
+                created: 2026-06-22
+                updated: 2026-06-22
+                summary: Review loop concept page.
+                sources:
+                  - raw/articles/review-loop.md
+                tags:
+                  - concept
+                confidence: mixed
+                status: active
+                ---
+
+                # Review Loop
+                """,
+            )
+
+            run_script("ingest.py", "--root", str(root), "--source", str(source), "--topic", "Platform")
+            source_page = root / "wiki" / "sources" / "execution-spec.md"
+            openclaw_page = root / "wiki" / "entities" / "openclaw.md"
+            claude_code_page = root / "wiki" / "entities" / "claude-code.md"
+            source_text = source_page.read_text(encoding="utf-8")
+            openclaw_text = openclaw_page.read_text(encoding="utf-8")
+
+            self.assertIn("topics:\n  - Platform", source_text)
+            self.assertIn("entities:", source_text)
+            self.assertIn("  - OpenClaw", source_text)
+            self.assertIn("  - Claude Code", source_text)
+            self.assertIn("concepts:\n  - Review Loop", source_text)
+            self.assertIn("claims:", source_text)
+            self.assertIn("## Entities", source_text)
+            self.assertIn("- [OpenClaw](../entities/openclaw.md)", source_text)
+            self.assertIn("- [Claude Code](../entities/claude-code.md)", source_text)
+            self.assertIn("## Knowledge Connections", source_text)
+            self.assertIn("- belongs_to: [[Platform]]", source_text)
+            self.assertIn("- related_to: [[Review Loop]]", source_text)
+            self.assertIn("- about: [[OpenClaw]]", source_text)
+            self.assertIn("## Claims", source_text)
+            self.assertIn("[high]", source_text)
+            self.assertTrue(openclaw_page.exists())
+            self.assertTrue(claude_code_page.exists())
+            self.assertIn("type: entity", openclaw_text)
+            self.assertIn("sources:\n  - wiki/sources/execution-spec.md", openclaw_text)
+            self.assertIn("topics:\n  - Platform", openclaw_text)
+
+            run_script("build_graph.py", "--root", str(root))
+            graph = json.loads((root / "output" / "graph" / "graph.json").read_text(encoding="utf-8"))
+            knowledge = graph["views"]["knowledge"]
+            knowledge_edges = knowledge["edges"]
+            knowledge_nodes = knowledge["nodes"]
+
+            self.assertTrue(
+                any(
+                    edge["source"] == "wiki/sources/execution-spec.md"
+                    and edge["target"] == "wiki/topics/platform.md"
+                    and edge["type"] == "belongs_to"
+                    for edge in knowledge_edges
+                )
+            )
+            self.assertTrue(
+                any(
+                    edge["source"] == "wiki/sources/execution-spec.md"
+                    and edge["target"] == "wiki/concepts/review-loop.md"
+                    and edge["type"] in {"about", "related_to"}
+                    for edge in knowledge_edges
+                )
+            )
+            openclaw_entity_ids = [
+                node["id"]
+                for node in knowledge_nodes
+                if node.get("type") == "entity" and node.get("label") == "OpenClaw"
+            ]
+            self.assertTrue(openclaw_entity_ids)
+            self.assertTrue(
+                any(
+                    edge["source"] == "wiki/sources/execution-spec.md"
+                    and edge["target"] == "wiki/entities/openclaw.md"
+                    and edge["type"] == "about"
+                    for edge in knowledge_edges
+                )
+            )
+            self.assertTrue(
+                any(
+                    str(node["id"]).startswith("claim:wiki/sources/execution-spec.md#")
+                    for node in knowledge_nodes
+                )
+            )
+            self.assertNotIn("entity:openclaw", {node["id"] for node in knowledge_nodes})
+
+    def test_ingest_reuses_existing_entity_page_and_refreshes_graph_links(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir) / "wiki"
+            source = Path(tmp_dir) / "openclaw-platform-note.md"
+            write_text(
+                source,
+                """
+                # OpenClaw Platform Note
+
+                OpenClaw Platform keeps the execution loop visible for the team.
+                """,
+            )
+            run_script("init_wiki.py", "--root", str(root), "--title", "Test Wiki")
+            write_text(
+                root / "wiki" / "entities" / "openclaw.md",
+                """
+                ---
+                title: OpenClaw
+                type: entity
+                created: 2026-06-22
+                updated: 2026-06-22
+                summary: Existing entity page.
+                sources:
+                  - wiki/sources/legacy.md
+                topics:
+                  - Platform
+                tags:
+                  - entity
+                confidence: mixed
+                status: active
+                maturity: emerging
+                ---
+
+                # OpenClaw
+                """,
+            )
+
+            run_script("ingest.py", "--root", str(root), "--source", str(source), "--topic", "Platform")
+
+            entity_text = (root / "wiki" / "entities" / "openclaw.md").read_text(encoding="utf-8")
+            self.assertIn("summary: Existing entity page.", entity_text)
+            self.assertIn("  - wiki/sources/legacy.md", entity_text)
+            self.assertIn("  - wiki/sources/openclaw-platform-note.md", entity_text)
+            self.assertIn("aliases:\n  - OpenClaw Platform", entity_text)
+            self.assertEqual(len(list((root / "wiki" / "entities").glob("openclaw*.md"))), 1)
+            self.assertFalse((root / "wiki" / "entities" / "openclaw-platform.md").exists())
+
+            run_script("build_graph.py", "--root", str(root))
+            graph = json.loads((root / "output" / "graph" / "graph.json").read_text(encoding="utf-8"))
+            knowledge_edges = graph["views"]["knowledge"]["edges"]
+            self.assertTrue(
+                any(
+                    edge["source"] == "wiki/sources/openclaw-platform-note.md"
+                    and edge["target"] == "wiki/entities/openclaw.md"
+                    and edge["type"] == "about"
+                    for edge in knowledge_edges
+                )
+            )
+
+    def test_entity_merge_apply_rewrites_entities_and_rebuilds_graph_outputs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir) / "wiki"
+            run_script("init_wiki.py", "--root", str(root), "--title", "Merge Apply Wiki")
+            write_text(
+                root / "wiki" / "sources" / "platform-spec.md",
+                """
+                ---
+                title: Platform Spec
+                type: source
+                created: 2026-06-22
+                updated: 2026-06-22
+                summary: Platform source connected to an entity label that should be canonicalized.
+                sources:
+                  - raw/articles/platform.pdf
+                entities:
+                  - OpenClaw Platform
+                tags:
+                  - source
+                confidence: extracted
+                status: active
+                ---
+
+                # Platform Spec
+                """,
+            )
+            write_text(
+                root / "wiki" / "entities" / "openclaw.md",
+                """
+                ---
+                title: OpenClaw
+                type: entity
+                created: 2026-06-22
+                updated: 2026-06-22
+                summary: Canonical OpenClaw entity.
+                sources:
+                  - wiki/sources/platform-spec.md
+                aliases:
+                  - OpenClaw System
+                topics:
+                  - Platform
+                tags:
+                  - entity
+                confidence: mixed
+                status: active
+                maturity: emerging
+                ---
+
+                # OpenClaw
+                """,
+            )
+            write_text(
+                root / "wiki" / "entities" / "openclaw-platform.md",
+                """
+                ---
+                title: OpenClaw Platform
+                type: entity
+                created: 2026-06-22
+                updated: 2026-06-22
+                summary: Alternate page that should be merged into OpenClaw.
+                sources:
+                  - wiki/sources/platform-spec.md
+                aliases:
+                  - OpenClaw Delivery Platform
+                topics:
+                  - Platform
+                tags:
+                  - entity
+                confidence: mixed
+                status: active
+                maturity: emerging
+                ---
+
+                # OpenClaw Platform
+                """,
+            )
+
+            run_script("build_viewer.py", "--root", str(root))
+            run_script("build_graph.py", "--root", str(root))
+
+            review_before = run_thinkwiki("entity-merge-review", "--root", str(root))
+            self.assertIn("Ambiguous Alias Groups: 1", review_before.stdout)
+
+            apply_result = run_thinkwiki(
+                "entity-merge-apply",
+                "--root",
+                str(root),
+                "--identity-key",
+                "openclaw",
+                "--canonical",
+                "wiki/entities/openclaw.md",
+            )
+
+            self.assertIn("ThinkWiki Entity Merge Apply", apply_result.stdout)
+            self.assertIn("Canonical: wiki/entities/openclaw.md", apply_result.stdout)
+            self.assertIn("merged: wiki/entities/openclaw-platform.md -> wiki/entities/openclaw.md", apply_result.stdout)
+
+            canonical_text = (root / "wiki" / "entities" / "openclaw.md").read_text(encoding="utf-8")
+            merged_text = (root / "wiki" / "entities" / "openclaw-platform.md").read_text(encoding="utf-8")
+            self.assertIn("aliases:", canonical_text)
+            self.assertIn("  - OpenClaw Platform", canonical_text)
+            self.assertIn("  - OpenClaw Delivery Platform", canonical_text)
+            self.assertIn("status: merged", merged_text)
+            self.assertIn("canonical_entity: wiki/entities/openclaw.md", merged_text)
+            self.assertIn("This entity page has been merged into", merged_text)
+
+            graph = json.loads((root / "output" / "graph" / "graph.json").read_text(encoding="utf-8"))
+            knowledge_nodes = graph["views"]["knowledge"]["nodes"]
+            knowledge_edges = graph["views"]["knowledge"]["edges"]
+            entity_node_ids = {node["id"] for node in knowledge_nodes if node.get("type") == "entity"}
+            self.assertIn("wiki/entities/openclaw.md", entity_node_ids)
+            self.assertNotIn("wiki/entities/openclaw-platform.md", entity_node_ids)
+            self.assertTrue(
+                any(
+                    edge["source"] == "wiki/sources/platform-spec.md"
+                    and edge["target"] == "wiki/entities/openclaw.md"
+                    and edge["type"] == "about"
+                    for edge in knowledge_edges
+                )
+            )
+
+            entity_review = json.loads((root / "output" / "graph" / "entity-merge-review.json").read_text(encoding="utf-8"))
+            self.assertEqual(entity_review["stats"]["ambiguousAliasGroupCount"], 0)
+            self.assertEqual(entity_review["stats"]["ambiguousEntityCount"], 0)
+
+    def test_entity_merge_apply_dry_run_writes_plan_without_mutating_pages(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir) / "wiki"
+            run_script("init_wiki.py", "--root", str(root), "--title", "Merge Plan Wiki")
+            write_text(
+                root / "wiki" / "sources" / "platform-spec.md",
+                """
+                ---
+                title: Platform Spec
+                type: source
+                created: 2026-06-22
+                updated: 2026-06-22
+                summary: Platform source connected to an entity label that should only be previewed.
+                sources:
+                  - raw/articles/platform.pdf
+                entities:
+                  - OpenClaw Platform
+                tags:
+                  - source
+                confidence: extracted
+                status: active
+                ---
+
+                # Platform Spec
+                """,
+            )
+            write_text(
+                root / "wiki" / "entities" / "openclaw.md",
+                """
+                ---
+                title: OpenClaw
+                type: entity
+                created: 2026-06-22
+                updated: 2026-06-22
+                summary: Canonical OpenClaw entity.
+                sources:
+                  - wiki/sources/platform-spec.md
+                aliases:
+                  - OpenClaw System
+                topics:
+                  - Platform
+                tags:
+                  - entity
+                confidence: mixed
+                status: active
+                maturity: emerging
+                ---
+
+                # OpenClaw
+                """,
+            )
+            write_text(
+                root / "wiki" / "entities" / "openclaw-platform.md",
+                """
+                ---
+                title: OpenClaw Platform
+                type: entity
+                created: 2026-06-22
+                updated: 2026-06-22
+                summary: Alternate page that should be previewed before merge.
+                sources:
+                  - wiki/sources/platform-spec.md
+                aliases:
+                  - OpenClaw Delivery Platform
+                topics:
+                  - Platform
+                tags:
+                  - entity
+                confidence: mixed
+                status: active
+                maturity: emerging
+                ---
+
+                # OpenClaw Platform
+                """,
+            )
+
+            run_script("build_viewer.py", "--root", str(root))
+            run_script("build_graph.py", "--root", str(root))
+            run_thinkwiki("entity-merge-review", "--root", str(root))
+
+            canonical_before = (root / "wiki" / "entities" / "openclaw.md").read_text(encoding="utf-8")
+            merged_before = (root / "wiki" / "entities" / "openclaw-platform.md").read_text(encoding="utf-8")
+
+            dry_run_result = run_thinkwiki(
+                "entity-merge-apply",
+                "--root",
+                str(root),
+                "--identity-key",
+                "openclaw",
+                "--canonical",
+                "wiki/entities/openclaw.md",
+                "--dry-run",
+            )
+
+            self.assertIn("ThinkWiki Entity Merge Plan", dry_run_result.stdout)
+            self.assertIn("Canonical: wiki/entities/openclaw.md", dry_run_result.stdout)
+            self.assertIn("preview merge: wiki/entities/openclaw-platform.md -> wiki/entities/openclaw.md", dry_run_result.stdout)
+            self.assertIn("Entity merge plan: output/graph/entity-merge-plan.html", dry_run_result.stdout)
+            self.assertIn("Output hub: output/index.html", dry_run_result.stdout)
+
+            canonical_after = (root / "wiki" / "entities" / "openclaw.md").read_text(encoding="utf-8")
+            merged_after = (root / "wiki" / "entities" / "openclaw-platform.md").read_text(encoding="utf-8")
+            self.assertEqual(canonical_before, canonical_after)
+            self.assertEqual(merged_before, merged_after)
+
+            plan_json_path = root / "output" / "graph" / "entity-merge-plan.json"
+            plan_md_path = root / "output" / "graph" / "entity-merge-plan.md"
+            plan_html_path = root / "output" / "graph" / "entity-merge-plan.html"
+            self.assertTrue(plan_json_path.exists())
+            self.assertTrue(plan_md_path.exists())
+            self.assertTrue(plan_html_path.exists())
+
+            plan = json.loads(plan_json_path.read_text(encoding="utf-8"))
+            self.assertEqual(plan["identityKey"], "openclaw")
+            self.assertEqual(plan["canonical"]["id"], "wiki/entities/openclaw.md")
+            self.assertEqual(plan["stats"]["mergedPageCount"], 1)
+            self.assertEqual(plan["stats"]["addedAliasCount"], 2)
+            self.assertEqual(plan["stats"]["addedSourceCount"], 0)
+            self.assertEqual(plan["stats"]["addedTopicCount"], 0)
+            self.assertEqual(plan["canonical"]["addedAliases"], ["OpenClaw Platform", "OpenClaw Delivery Platform"])
+            self.assertEqual(len(plan["mergedPages"]), 1)
+            self.assertEqual(plan["mergedPages"][0]["id"], "wiki/entities/openclaw-platform.md")
+            self.assertEqual(plan["mergedPages"][0]["afterStatus"], "merged")
+
+            plan_html = plan_html_path.read_text(encoding="utf-8")
+            self.assertIn("ThinkWiki Entity Merge Plan", plan_html)
+            self.assertIn("Dry-run preview for entity merge apply", plan_html)
+            self.assertIn("Open Workspace Home", plan_html)
+            self.assertIn("Open Entity Merge Review", plan_html)
+
+            hub_html = (root / "output" / "index.html").read_text(encoding="utf-8")
+            self.assertIn("graph/entity-merge-plan.html", hub_html)
+            self.assertIn("Entity Merge Plan", hub_html)
+            log_text = (root / "log.md").read_text(encoding="utf-8")
+            self.assertIn("entity-merge-plan | openclaw", log_text)
+            self.assertIn("output/graph/entity-merge-plan.html", log_text)
 
     def test_clip_text_creates_inbox_item_and_next_step(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1104,7 +1787,7 @@ class ThinkWikiRegressionTest(unittest.TestCase):
             self.assertIn("ready", inbox_html)
             self.assertIn("Open metadata", inbox_html)
             hub_html = (root / "output" / "index.html").read_text(encoding="utf-8")
-            self.assertIn("优先处理 Ready Inbox", hub_html)
+            self.assertIn("Prioritize Ready Inbox", hub_html)
             self.assertIn("inbox/index.html#ready", hub_html)
 
     def test_clip_url_auto_detects_wechat_adapter_from_dom(self) -> None:
@@ -1191,7 +1874,7 @@ class ThinkWikiRegressionTest(unittest.TestCase):
 
             inbox_html = (root / "output" / "inbox" / "index.html").read_text(encoding="utf-8")
             self.assertIn("weak", inbox_html)
-            self.assertIn("建议优先人工检查正文质量和来源信息", inbox_html)
+            self.assertIn("Too little information was extracted. Check the article body and source details manually first.", inbox_html)
 
     def test_clip_url_wait_mode_polls_until_content_is_ready(self) -> None:
         class PollingHandler(http.server.BaseHTTPRequestHandler):
@@ -1309,7 +1992,7 @@ class ThinkWikiRegressionTest(unittest.TestCase):
             self.assertIn("Capture reason: loading_placeholder", result.stdout)
             inbox_html = (root / "output" / "inbox" / "index.html").read_text(encoding="utf-8")
             self.assertIn("loading_placeholder", inbox_html)
-            self.assertIn("页面仍像加载占位", inbox_html)
+            self.assertIn("The page still looks like a loading placeholder", inbox_html)
 
     def test_clip_url_media_always_downloads_and_rewrites_markdown(self) -> None:
         tiny_png = base64.b64decode(
@@ -1489,6 +2172,92 @@ class ThinkWikiRegressionTest(unittest.TestCase):
             self.assertIn("Output hub: output/index.html", result.stdout)
             self.assertIn("Output hub URI: file://", result.stdout)
             self.assertTrue((root / "output" / "index.html").exists())
+
+    def test_serve_print_urls_lists_workspace_home(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir) / "wiki"
+            write_text(root / ".wiki-schema.md", "# marker")
+            write_text(root / "output" / "index.html", "<html><body>ThinkWiki Outputs</body></html>")
+
+            result = run_script("serve_outputs.py", "--root", str(root), "--print-urls")
+
+            self.assertIn("ThinkWiki output server: http://127.0.0.1:8765", result.stdout)
+            self.assertIn("Workspace Home: http://127.0.0.1:8765/index.html", result.stdout)
+            self.assertIn("OpenClaw browser: openclaw browser --browser-profile openclaw open http://127.0.0.1:8765/index.html", result.stdout)
+
+    def test_serve_command_serves_output_hub(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir) / "wiki"
+            write_text(root / ".wiki-schema.md", "# marker")
+            write_text(root / "output" / "index.html", "<html><body>ThinkWiki Outputs</body></html>")
+
+            proc = subprocess.Popen(
+                [
+                    runtime_python(),
+                    str(REPO_ROOT / "scripts" / "serve_outputs.py"),
+                    "--root",
+                    str(root),
+                    "--port",
+                    "28765",
+                ],
+                cwd=REPO_ROOT,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            try:
+                deadline = time.time() + 5
+                while time.time() < deadline:
+                    try:
+                        response = urllib.request.urlopen("http://127.0.0.1:28765/index.html")
+                        body = response.read().decode("utf-8")
+                        self.assertIn("ThinkWiki Outputs", body)
+                        return
+                    except urllib.error.URLError:
+                        time.sleep(0.05)
+                self.fail("Timed out waiting for ThinkWiki serve command")
+            finally:
+                proc.terminate()
+                proc.wait(timeout=5)
+
+    def test_serve_fails_when_output_directory_is_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir) / "wiki"
+            write_text(root / ".wiki-schema.md", "# marker")
+
+            result = run_thinkwiki("serve", "--root", str(root), "--print-urls", check=False)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("Output directory not found", result.stderr)
+
+    def test_viewer_prints_serve_hint(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir) / "wiki"
+            write_text(root / ".wiki-schema.md", "# marker")
+            write_text(root / "index.md", "# Demo Wiki")
+            (root / "wiki" / "sources").mkdir(parents=True, exist_ok=True)
+            write_text(
+                root / "wiki" / "sources" / "alpha.md",
+                """
+                ---
+                title: Alpha Source
+                type: source
+                created: 2026-06-19
+                updated: 2026-06-19
+                summary: Alpha summary.
+                sources:
+                  - raw/articles/alpha.md
+                confidence: extracted
+                status: active
+                ---
+
+                # Alpha Source
+                """,
+            )
+
+            result = run_script("build_viewer.py", "--root", str(root))
+
+            self.assertIn("Browse via HTTP:", result.stdout)
+            self.assertIn("python scripts/thinkwiki serve --root", result.stdout)
+            self.assertIn("http://127.0.0.1:8765/index.html", result.stdout)
 
 
 if __name__ == "__main__":

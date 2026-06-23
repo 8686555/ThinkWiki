@@ -1,12 +1,12 @@
 # Overview
 
-## 当前状态
+## Current Status
 
-`{{TITLE}}` 刚完成初始化，尚未导入来源。
+`{{TITLE}}` has just been initialized and does not contain imported sources yet.
 
-## 维护原则
+## Maintenance Principles
 
-- 把 `raw/` 当作原始证据层
-- 把 `wiki/` 当作编译后的长期记忆层
-- 把 `index.md` 当作导航入口
-- 把 `log.md` 当作时间线记录
+- Treat `raw/` as the evidence layer
+- Treat `wiki/` as the compiled long-term memory layer
+- Treat `index.md` as the navigation entry
+- Treat `log.md` as the timeline

@@ -2,9 +2,9 @@
 
 ## Overview
 
-- 总览页：[overview.md](overview.md)
-- 操作日志：[log.md](log.md)
-- 目标说明：[purpose.md](purpose.md)
+- Overview page: [overview.md](overview.md)
+- Activity log: [log.md](log.md)
+- Purpose: [purpose.md](purpose.md)
 
 ## Topics
 

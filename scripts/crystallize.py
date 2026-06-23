@@ -1,6 +1,18 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+"""
+ThinkWiki Script: crystallize
+
+Purpose:
+- Create a focused concept or decision page from selected source material.
+
+Usage:
+- Prefer `python scripts/thinkwiki crystallize ...`.
+- Run `python scripts/<script> --help` for direct CLI details when the file exposes its own arguments.
+"""
+
+
 import argparse
 import re
 from pathlib import Path

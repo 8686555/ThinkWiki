@@ -1,10 +1,22 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+"""
+ThinkWiki Script: build_inbox
+
+Purpose:
+- Build the HTML inbox review page from the current inbox contents.
+
+Usage:
+- Prefer `python scripts/thinkwiki inbox ...`.
+- Run `python scripts/<script> --help` for direct CLI details when the file exposes its own arguments.
+"""
+
+
 import argparse
 from pathlib import Path
 
-from utils import append_log, file_uri, find_repo_root, today_str, write_inbox_review, write_output_home
+from utils import append_log, file_uri, find_repo_root, print_output_serve_hint, today_str, write_inbox_review, write_output_home
 
 
 def main() -> int:
@@ -28,6 +40,7 @@ def main() -> int:
     print(f"Inbox review URI: {file_uri(inbox_page)}")
     print("Output hub: output/index.html")
     print(f"Output hub URI: {file_uri(output_home)}")
+    print_output_serve_hint(root)
     return 0
 
 

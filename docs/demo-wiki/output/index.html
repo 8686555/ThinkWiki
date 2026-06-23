@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -319,24 +319,26 @@
       <div class="hero-title">
         <h1>ThinkWiki Demo Wiki</h1>
         <div class="meta">
-          <span class="badge">知识工作台首页</span>
-          <span class="badge">生成日期 2026-06-21</span>
+          <span class="badge">Workspace Home</span>
+          <span class="badge">Generated 2026-06-23</span>
         </div>
       </div>
-      <p class="lead">这里不只是成果入口页，而是当前 wiki 的工作台首页。你可以先看最近发生了什么、哪些页面值得继续整理，以及 inbox 里还有哪些采集内容待正式入库，再决定进入浏览页还是图谱页。</p>
+      <p class="lead">This is more than an output index. It is the current workspace home for the wiki, where you can see what changed, what needs attention, and what is still waiting in the inbox before deciding whether to open the viewer or the graph.</p>
       <div class="stats">
-        <div class='stat'><strong>3</strong><span>成果页</span></div>
+        <div class='stat'><strong>4</strong><span>Outputs</span></div>
 <div class='stat'><strong>1</strong><span>Inbox</span></div>
 <div class='stat'><strong>1</strong><span>Ready</span></div>
-<div class='stat'><strong>11</strong><span>页面数</span></div>
-<div class='stat'><strong>14</strong><span>图节点</span></div>
-<div class='stat'><strong>44</strong><span>图关系</span></div>
+<div class='stat'><strong>11</strong><span>Pages</span></div>
+<div class='stat'><strong>11</strong><span>Graph Nodes</span></div>
+<div class='stat'><strong>41</strong><span>Graph Edges</span></div>
+<div class='stat'><strong>0</strong><span>Claims</span></div>
+<div class='stat'><strong>0</strong><span>Entities</span></div>
       </div>
     </section>
     <div class="workspace-grid">
       <section class="panel">
         <h2>What Changed</h2>
-        <p>这里汇总最近更新和最近生成的页面，帮助你快速判断这次整理后 wiki 发生了什么变化。</p>
+        <p>This section highlights recently updated and recently generated pages so you can quickly see what changed in the wiki.</p>
         <a class='mini-card' href='viewer/index.html#page=wiki/queries/what-makes-ai-native-team.md' target='_blank' rel='noopener'><div class='mini-meta'><span class='mini-type'>query</span><span>2026-06-19</span></div><strong>What Makes an AI Native Team</strong><span>Saved query summarizing the defining traits of an AI native delivery team.</span></a>
 <a class='mini-card' href='viewer/index.html#page=wiki/sources/review-checklist.md' target='_blank' rel='noopener'><div class='mini-meta'><span class='mini-type'>source</span><span>2026-06-19</span></div><strong>Review Checklist</strong><span>A source page explaining how human review, acceptance criteria, and escalation paths fit together.</span></a>
 <a class='mini-card' href='viewer/index.html#page=wiki/sources/platform-spec.md' target='_blank' rel='noopener'><div class='mini-meta'><span class='mini-type'>source</span><span>2026-06-19</span></div><strong>Platform Spec</strong><span>A source page describing why execution specs and context must be treated as one delivery system.</span></a>
@@ -349,36 +351,37 @@
       </section>
       <section class="panel">
         <h2>Next Actions</h2>
-        <p>从这里直接进入最值得继续操作的下一步，而不是手动判断应该先看哪里。</p>
+        <p>Jump directly into the most valuable next step instead of manually deciding where to look first.</p>
         <div class="actions">
-          <a class='action-card' href='inbox/index.html#ready' target='_blank' rel='noopener'><span class='action-tag'>Ingest</span><strong>优先处理 Ready Inbox</strong><span>当前有 1 条可直接继续复核并 ingest 的 inbox 条目，建议先看最上面的 ready 分组。</span></a>
-<a class='action-card' href='inbox/index.html' target='_blank' rel='noopener'><span class='action-tag'>Review</span><strong>处理 Inbox 待办</strong><span>当前有 1 条已采集内容，先检查最近一条，再决定是否正式 ingest。</span></a>
-<a class='action-card' href='viewer/index.html' target='_blank' rel='noopener'><span class='action-tag'>Read</span><strong>打开本地浏览页</strong><span>按页面类型、状态和置信度快速浏览整个 wiki。</span></a>
-<a class='action-card' href='graph/index.html' target='_blank' rel='noopener'><span class='action-tag'>Explore</span><strong>打开知识图谱</strong><span>进入图谱页，查看关键页面、桥接页面和建议补链。</span></a>
+          <a class='action-card' href='inbox/index.html#ready' target='_blank' rel='noopener'><span class='action-tag'>Ingest</span><strong>Prioritize Ready Inbox</strong><span>There are 1 inbox items ready for final review and formal ingest. Start with the Ready section.</span></a>
+<a class='action-card' href='inbox/index.html' target='_blank' rel='noopener'><span class='action-tag'>Review</span><strong>Review Inbox Queue</strong><span>There are 1 captured items. Review the latest one before deciding whether to ingest it.</span></a>
+<a class='action-card' href='viewer/index.html' target='_blank' rel='noopener'><span class='action-tag'>Read</span><strong>Open Local Viewer</strong><span>Browse the whole wiki by page type, status, and confidence.</span></a>
+<a class='action-card' href='graph/index.html' target='_blank' rel='noopener'><span class='action-tag'>Explore</span><strong>Open Knowledge Graph</strong><span>Open the graph to inspect key pages, bridge pages, and suggested links.</span></a>
         </div>
       </section>
     </div>
     <div class="workspace-grid">
       <section class="panel">
         <h2>Needs Attention</h2>
-        <p>优先显示当前知识库里还比较薄弱的地方，例如孤立页面、弱连接页面、缺摘要或缺来源的页面。</p>
-        <ul class='bullet-list'><li>当前有 <strong>3</strong> 个弱连接页面，适合继续整理上下文。</li><li>有 <strong>1</strong> 个高连接薄内容页面，建议优先补摘要和上下文。</li></ul>
+        <p>This section highlights the weakest spots in the current knowledge base, such as isolated pages, weakly connected pages, or pages missing summaries and sources.</p>
+        <ul class='bullet-list'><li>There are <strong>1</strong> high-degree thin pages. Improve their summaries and context first.</li></ul>
       </section>
       <section class="panel">
         <h2>Graph Snapshot</h2>
-        <p>直接读取知识图谱的结构洞察，让首页先告诉你现在图里最值得关注的地方。</p>
+        <p>Read structural graph insights directly from the knowledge graph so the home page can tell you what matters most right now.</p>
         <div class="snapshot">
-          <div class='snapshot-copy'>当前关键页面是 AI Native Team。 主要页面已经形成基础连接。 有 1 个高连接薄内容页面值得优先补强。 当前可复核 8 条建议补链。</div>
-<div class='snapshot-chip'>当前关键页面: <strong>AI Native Team</strong></div>
-<div class='snapshot-chip'>孤立页面 0 个</div><div class='snapshot-chip'>建议补链 8 条</div><div class='snapshot-chip'>Hub Stubs 1 个</div><div class='snapshot-chip'>Fragile Bridges 0 个</div><div class='snapshot-chip'>Isolated Clusters 0 个</div>
-<ul class='bullet-list'><li>检查高连接但内容薄弱的页面，补摘要、上下文和来源。</li><li>复核建议补链，把高置信度关系转成显式页面链接。</li></ul>
+          <div class='snapshot-copy'>The current key page is AI Native Team. The main pages already have a basic connection structure. There are 1 high-degree thin pages worth strengthening first. There are 8 suggested links ready for review.</div>
+<div class='snapshot-chip'>Current key page: <strong>AI Native Team</strong></div>
+<div class='snapshot-chip'>Graph Schema v2</div><div class='snapshot-chip'>Default View knowledge</div><div class='snapshot-chip'>Knowledge Nodes 11</div><div class='snapshot-chip'>Claims 0</div><div class='snapshot-chip'>Entities 0</div><div class='snapshot-chip'>Aliased Entities 0</div><div class='snapshot-chip'>Aliases 0</div><div class='snapshot-chip'>Ambiguous Alias Groups 0</div><div class='snapshot-chip'>Ambiguous Entities 0</div><div class='snapshot-chip'>Suggested Edges 8</div>
+<div class='snapshot-chip'>Isolated Pages 0</div><div class='snapshot-chip'>Isolated Entities 0</div><div class='snapshot-chip'>Suggested Links 8</div><div class='snapshot-chip'>Ambiguous Alias Groups 0</div><div class='snapshot-chip'>Hub Stubs 1</div><div class='snapshot-chip'>Fragile Bridges 0</div><div class='snapshot-chip'>Isolated Clusters 0</div>
+<ul class='bullet-list'><li>Strengthen high-degree thin pages with better summaries, context, and sources.</li><li>Review suggested links and convert strong candidates into explicit page links.</li></ul>
         </div>
       </section>
     </div>
     <div class="section-grid">
       <section class="panel">
         <h2>Featured Pages</h2>
-        <p>优先展示 concept、decision、synthesis 和 source，帮助你快速抓到这个知识库最有价值的沉淀。</p>
+        <p>Surface concept, decision, synthesis, and source pages first so you can spot the most valuable knowledge artifacts quickly.</p>
         <a class='mini-card' href='viewer/index.html#page=wiki/sources/review-checklist.md' target='_blank' rel='noopener'><div class='mini-meta'><span class='mini-type'>source</span><span>2026-06-19</span></div><strong>Review Checklist</strong><span>A source page explaining how human review, acceptance criteria, and escalation paths fit together.</span></a>
 <a class='mini-card' href='viewer/index.html#page=wiki/sources/platform-spec.md' target='_blank' rel='noopener'><div class='mini-meta'><span class='mini-type'>source</span><span>2026-06-19</span></div><strong>Platform Spec</strong><span>A source page describing why execution specs and context must be treated as one delivery system.</span></a>
 <a class='mini-card' href='viewer/index.html#page=wiki/concepts/execution-spec.md' target='_blank' rel='noopener'><div class='mini-meta'><span class='mini-type'>concept</span><span>2026-06-19</span></div><strong>Execution Spec</strong><span>A reusable specification that binds task framing, context, policy, and review expectations together.</span></a>
@@ -386,23 +389,23 @@
       </section>
       <section class="panel">
         <h2>Outputs Overview</h2>
-        <p>浏览页和图谱页仍然是最重要的两个成果入口，但现在它们被纳入统一工作台视图。</p>
+        <p>The viewer and graph remain the two most important outputs, but they now live inside one unified workspace view.</p>
         <div class="grid">
-          <a class='card' href='inbox/index.html' target='_blank' rel='noopener'><strong>Inbox Review</strong><span>查看待处理 inbox 条目，并复制下一步 ingest 命令</span><code>inbox/index.html</code></a>
-<a class='card' href='viewer/index.html' target='_blank' rel='noopener'><strong>本地浏览页</strong><span>按页面类型、置信度和状态浏览整个 wiki</span><code>viewer/index.html</code></a>
-<a class='card' href='graph/index.html' target='_blank' rel='noopener'><strong>知识图谱</strong><span>查看页面之间的引用、包含、关键页面和建议补链</span><code>graph/index.html</code></a>
-<a class='card' href='graph/report.html' target='_blank' rel='noopener'><strong>图谱治理报告</strong><span>查看孤立页面、脆弱桥接、孤立子图和治理建议</span><code>graph/report.html</code></a>
+          <a class='card' href='inbox/index.html' target='_blank' rel='noopener'><strong>Inbox Review</strong><span>Review inbox items and copy the next ingest commands</span><code>inbox/index.html</code></a>
+<a class='card' href='viewer/index.html' target='_blank' rel='noopener'><strong>Local Viewer</strong><span>Browse the entire wiki by page type, confidence, and status</span><code>viewer/index.html</code></a>
+<a class='card' href='graph/index.html' target='_blank' rel='noopener'><strong>Knowledge Graph</strong><span>Switch between knowledge, document, and suggested views to inspect content relations and candidate edges</span><code>graph/index.html</code></a>
+<a class='card' href='graph/report.html' target='_blank' rel='noopener'><strong>Graph Governance Report</strong><span>Inspect isolated pages, fragile bridges, disconnected clusters, and governance actions</span><code>graph/report.html</code></a>
         </div>
       </section>
       <section class="panel">
         <h2>Inbox Queue</h2>
-        <p>这里显示最近采集到 inbox 的内容。你可以先打开原始条目做快速复核，再决定是否运行 ingest 正式入库。</p>
-        <a class='mini-card' href='../normalized/inbox/2026-06-20-team-retrospective.md' target='_blank' rel='noopener'><div class='mini-meta'><span class='mini-type'>wechat</span><span>2026-06-21 11:13</span></div><strong>Team Retrospective</strong><span>Collect this note in inbox first, then decide whether it should become a source page.</span><span>ThinkWiki Channel · ThinkWiki Team</span><span class='quality quality-ready'>quality: ready</span><span class='quality quality-wait_completed'>capture: wait_completed</span><span class='quality quality-media'>media: localized</span><code>normalized/inbox/2026-06-20-team-retrospective.md</code></a>
+        <p>This section shows the most recent inbox captures. Open the raw item first for a quick review, then decide whether to run ingest.</p>
+        <a class='mini-card' href='../normalized/inbox/2026-06-20-team-retrospective.md' target='_blank' rel='noopener'><div class='mini-meta'><span class='mini-type'>wechat</span><span>2026-06-23 11:26</span></div><strong>Team Retrospective</strong><span>Collect this note in inbox first, then decide whether it should become a source page.</span><span>ThinkWiki Channel · ThinkWiki Team</span><span class='quality quality-ready'>quality: ready</span><span class='quality quality-wait_completed'>capture: wait_completed</span><span class='quality quality-media'>media: localized</span><code>normalized/inbox/2026-06-20-team-retrospective.md</code></a>
       </section>
     </div>
     <div class="guide">
-      <strong>从这里开始</strong>
-      <span>先看 `What Changed`、`Needs Attention` 和 `Inbox Queue`，再决定进入浏览页或图谱页。如果你刚导入或采集了新资料，建议重新运行 viewer 和 graph 以刷新工作台首页。</span>
+      <strong>Start here</strong>
+      <span>Start with `What Changed`, `Needs Attention`, and `Inbox Queue`, then decide whether to open the viewer or the graph. If you just imported or captured new material, rerun viewer and graph to refresh this home page.</span>
     </div>
   </main>
 </body>

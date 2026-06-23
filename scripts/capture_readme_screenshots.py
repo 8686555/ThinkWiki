@@ -1,6 +1,18 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+"""
+ThinkWiki Script: capture_readme_screenshots
+
+Purpose:
+- Capture repository screenshots from the demo wiki outputs for the README.
+
+Usage:
+- Run directly when refreshing repository assets.
+- Run `python scripts/<script> --help` for direct CLI details when the file exposes its own arguments.
+"""
+
+
 import argparse
 from pathlib import Path
 

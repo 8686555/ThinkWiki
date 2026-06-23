@@ -1,6 +1,18 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+"""
+ThinkWiki Script: batch_clip
+
+Purpose:
+- Clip many files, URLs, or text entries into the inbox from a directory scan or manifest.
+
+Usage:
+- Prefer `python scripts/thinkwiki batch-clip ...`.
+- Run `python scripts/<script> --help` for direct CLI details when the file exposes its own arguments.
+"""
+
+
 import argparse
 import json
 from pathlib import Path

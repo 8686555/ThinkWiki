@@ -1,6 +1,18 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+"""
+ThinkWiki Script: build_viewer
+
+Purpose:
+- Build the local HTML viewer and JSON payload for browsing wiki pages.
+
+Usage:
+- Prefer `python scripts/thinkwiki viewer ...`.
+- Run `python scripts/<script> --help` for direct CLI details when the file exposes its own arguments.
+"""
+
+
 import argparse
 import json
 from html import escape
@@ -17,6 +29,7 @@ from utils import (
     is_external_link,
     markdown_links,
     parse_frontmatter,
+    print_output_serve_hint,
     read_text,
     today_str,
     write_text,
@@ -787,6 +800,7 @@ def main() -> int:
     print(f"Viewer page URI: {file_uri(viewer_html_path)}")
     print("Output hub: output/index.html")
     print(f"Output hub URI: {file_uri(output_home)}")
+    print_output_serve_hint(root)
     return 0
 
 

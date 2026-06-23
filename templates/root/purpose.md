@@ -1,7 +1,7 @@
 # Purpose
 
-## 这个知识库服务什么目标
+## What This Knowledge Base Serves
 
-- 在这里写下 1-3 个长期目标
-- 在这里写下你最关心的主题
-- 在这里写下你希望 agent 优先输出的结果类型
+- List 1-3 long-term goals here
+- List the topics you care about most here
+- List the result types you want the agent to prioritize here

@@ -1,6 +1,18 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+"""
+ThinkWiki Script: lint_wiki
+
+Purpose:
+- Run structural and link checks across the current wiki contents.
+
+Usage:
+- Prefer `python scripts/thinkwiki lint ...`.
+- Run `python scripts/<script> --help` for direct CLI details when the file exposes its own arguments.
+"""
+
+
 import argparse
 import re
 from datetime import date

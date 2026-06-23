@@ -1,6 +1,18 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+"""
+ThinkWiki Script: ask
+
+Purpose:
+- Answer a user question from the current wiki using evidence-first retrieval and page ranking.
+
+Usage:
+- Prefer `python scripts/thinkwiki ask ...`.
+- Run `python scripts/<script> --help` for direct CLI details when the file exposes its own arguments.
+"""
+
+
 import argparse
 from datetime import date
 from pathlib import Path

@@ -1,10 +1,22 @@
 from __future__ import annotations
 
+"""
+ThinkWiki Module: workspace_status
+
+Purpose:
+- Compute reusable workspace snapshot data for status and health reporting.
+
+Usage:
+- Imported by status-oriented scripts; not intended for direct end-user execution.
+- Run `python scripts/<script> --help` for direct CLI details when the file exposes its own arguments.
+"""
+
+
 import json
 from datetime import datetime
 from pathlib import Path
 
-from utils import REQUIRED_FIELDS, collect_inbox_items, collect_wiki_pages, parse_frontmatter, read_text
+from utils import REQUIRED_FIELDS, ambiguous_entity_merge_candidates, collect_inbox_items, collect_wiki_pages, parse_frontmatter, read_text
 
 REQUIRED_WORKSPACE_PATHS = [
     ".wiki-schema.md",
@@ -155,7 +167,18 @@ def _output_snapshot(root: Path) -> dict[str, object]:
     graph_payload, graph_error = _load_json(graph_json)
     graph_report_payload, graph_report_error = _load_json(graph_report_json)
     insights = graph_payload.get("insights", {}) if isinstance(graph_payload.get("insights"), dict) else {}
+    graph_views = graph_payload.get("views", {}) if isinstance(graph_payload.get("views"), dict) else {}
+    knowledge_view = graph_views.get("knowledge", {}) if isinstance(graph_views.get("knowledge"), dict) else {}
+    knowledge_nodes = knowledge_view.get("nodes", []) if isinstance(knowledge_view.get("nodes"), list) else []
+    knowledge_edges = knowledge_view.get("edges", []) if isinstance(knowledge_view.get("edges"), list) else []
+    suggested_view = graph_views.get("suggested", {}) if isinstance(graph_views.get("suggested"), dict) else {}
+    suggested_edges = suggested_view.get("edges", []) if isinstance(suggested_view.get("edges"), list) else []
     report_stats = graph_report_payload.get("stats", {}) if isinstance(graph_report_payload.get("stats"), dict) else {}
+    entity_nodes = [
+        node for node in knowledge_nodes
+        if isinstance(node, dict) and str(node.get("type", "") or "") == "entity"
+    ]
+    ambiguous_merge_candidates, ambiguous_entity_count = ambiguous_entity_merge_candidates(entity_nodes)
 
     return {
         "hub": {
@@ -175,9 +198,28 @@ def _output_snapshot(root: Path) -> dict[str, object]:
             "json_exists": graph_json.exists(),
             "mtime": _mtime(graph_html),
             "generated_at": str(graph_payload.get("generated_at", "") or ""),
+            "schema_version": str(graph_payload.get("schema_version", "") or ""),
+            "default_view": str(graph_payload.get("default_view", "") or ""),
             "node_count": len(graph_payload.get("nodes", [])) if isinstance(graph_payload.get("nodes"), list) else 0,
             "edge_count": len(graph_payload.get("edges", [])) if isinstance(graph_payload.get("edges"), list) else 0,
             "suggested_links": len(insights.get("suggestedLinks", [])) if isinstance(insights.get("suggestedLinks"), list) else 0,
+            "knowledge_node_count": len(knowledge_nodes),
+            "knowledge_edge_count": len(knowledge_edges),
+            "claim_count": sum(1 for node in knowledge_nodes if str(node.get("type", "") or "") == "claim"),
+            "entity_count": len(entity_nodes),
+            "aliased_entity_count": sum(
+                1
+                for node in entity_nodes
+                if isinstance(node.get("aliases"), list) and any(str(item).strip() for item in node.get("aliases", []))
+            ),
+            "alias_count": sum(
+                len([str(item).strip() for item in node.get("aliases", []) if str(item).strip()])
+                for node in entity_nodes
+                if isinstance(node.get("aliases"), list)
+            ),
+            "ambiguous_alias_group_count": len(ambiguous_merge_candidates),
+            "ambiguous_entity_count": ambiguous_entity_count,
+            "suggested_edge_count": len(suggested_edges),
             "report_exists": graph_report_json.exists(),
             "report_markdown_exists": graph_report_md.exists(),
             "report_html_exists": graph_report_html.exists(),
@@ -190,6 +232,12 @@ def _output_snapshot(root: Path) -> dict[str, object]:
             "report_hub_stubs": int(report_stats.get("hubStubCount", 0) or 0),
             "report_fragile_bridges": int(report_stats.get("fragileBridgeCount", 0) or 0),
             "report_isolated_clusters": int(report_stats.get("isolatedClusterCount", 0) or 0),
+            "report_entities": int(report_stats.get("entityCount", 0) or 0),
+            "report_aliased_entities": int(report_stats.get("aliasedEntityCount", 0) or 0),
+            "report_aliases": int(report_stats.get("aliasCount", 0) or 0),
+            "report_ambiguous_alias_groups": int(report_stats.get("ambiguousAliasGroupCount", 0) or 0),
+            "report_ambiguous_entities": int(report_stats.get("ambiguousEntityCount", 0) or 0),
+            "report_isolated_entities": int(report_stats.get("isolatedEntityCount", 0) or 0),
             "error": graph_error,
             "report_error": graph_report_error,
         },
@@ -253,6 +301,8 @@ def collect_health_issues(root: Path, snapshot: dict[str, object]) -> tuple[list
         errors.append("[graph-data-missing] output/graph/index.html exists but output/graph/graph.json is missing")
     if graph.get("json_exists") and not graph.get("report_exists"):
         warnings.append("[graph-report-missing] output/graph/graph.json exists but output/graph/report.json is missing")
+    if graph.get("json_exists") and str(graph.get("schema_version", "") or "") == "2" and not int(graph.get("knowledge_node_count", 0) or 0):
+        warnings.append("[knowledge-graph-empty] graph.json v2 exists but knowledge view has no nodes")
     if graph.get("report_exists") and not graph.get("report_html_exists"):
         warnings.append("[graph-report-html-missing] output/graph/report.json exists but output/graph/report.html is missing")
     if graph.get("report_exists") and str(graph.get("report_error", "") or "").strip():
@@ -367,10 +417,19 @@ def format_status_lines(snapshot: dict[str, object]) -> list[str]:
         "- Graph: {state}{detail}".format(
             state="ready" if graph.get("html_exists") else "missing",
             detail=(
-                " (generated {generated}, nodes={nodes}, edges={edges}, suggestedLinks={suggested})".format(
+                " (generated {generated}, schema=v{schema}, defaultView={default_view}, nodes={nodes}, edges={edges}, knowledgeNodes={knowledge_nodes}, claims={claims}, entities={entities}, aliasedEntities={aliased_entities}, aliases={aliases}, ambiguousAliasGroups={ambiguous_groups}, ambiguousEntities={ambiguous_entities}, suggestedLinks={suggested})".format(
                     generated=str(graph.get("generated_at", "") or _format_timestamp(graph.get("mtime")) or "n/a"),
+                    schema=str(graph.get("schema_version", "") or "1"),
+                    default_view=str(graph.get("default_view", "") or "legacy"),
                     nodes=int(graph.get("node_count", 0) or 0),
                     edges=int(graph.get("edge_count", 0) or 0),
+                    knowledge_nodes=int(graph.get("knowledge_node_count", 0) or 0),
+                    claims=int(graph.get("claim_count", 0) or 0),
+                    entities=int(graph.get("entity_count", 0) or 0),
+                    aliased_entities=int(graph.get("aliased_entity_count", 0) or 0),
+                    aliases=int(graph.get("alias_count", 0) or 0),
+                    ambiguous_groups=int(graph.get("ambiguous_alias_group_count", 0) or 0),
+                    ambiguous_entities=int(graph.get("ambiguous_entity_count", 0) or 0),
                     suggested=int(graph.get("suggested_links", 0) or 0),
                 )
                 if graph.get("html_exists")
@@ -380,9 +439,14 @@ def format_status_lines(snapshot: dict[str, object]) -> list[str]:
         "- Graph Report: {state}{detail}".format(
             state="ready" if graph.get("report_html_exists") else "missing",
             detail=(
-                " (generated {generated}, isolatedPages={isolated}, hubStubs={hub_stubs}, fragileBridges={fragile}, clusters={clusters})".format(
+                " (generated {generated}, isolatedPages={isolated}, isolatedEntities={isolated_entities}, aliasedEntities={aliased_entities}, aliases={aliases}, ambiguousAliasGroups={ambiguous_groups}, ambiguousEntities={ambiguous_entities}, hubStubs={hub_stubs}, fragileBridges={fragile}, clusters={clusters})".format(
                     generated=str(graph.get("report_generated_at", "") or _format_timestamp(graph.get("report_mtime")) or "n/a"),
                     isolated=int(graph.get("report_isolated_pages", 0) or 0),
+                    isolated_entities=int(graph.get("report_isolated_entities", 0) or 0),
+                    aliased_entities=int(graph.get("report_aliased_entities", 0) or 0),
+                    aliases=int(graph.get("report_aliases", 0) or 0),
+                    ambiguous_groups=int(graph.get("report_ambiguous_alias_groups", 0) or 0),
+                    ambiguous_entities=int(graph.get("report_ambiguous_entities", 0) or 0),
                     hub_stubs=int(graph.get("report_hub_stubs", 0) or 0),
                     fragile=int(graph.get("report_fragile_bridges", 0) or 0),
                     clusters=int(graph.get("report_isolated_clusters", 0) or 0),
