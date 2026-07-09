@@ -141,7 +141,11 @@ def ambiguous_entity_merge_candidates(
             "reason": f"Identity key `{identity_key}` matches {len(entity_ids)} entity pages. Review manually before merging.",
         })
 
-    if embedding_enabled and len(entity_labels) >= 2:
+    if (
+        embedding_enabled
+        and len(entity_labels) >= 2
+        and os.environ.get("SILICONFLOW_API_KEY", "").strip()
+    ):
         try:
             from bge_client import bge_embed, cosine_similarity
 
@@ -171,8 +175,11 @@ def ambiguous_entity_merge_candidates(
                                 "labels": [entity_labels.get(id_a, id_a), entity_labels.get(id_b, id_b)],
                                 "reason": f"Semantic similarity {sim:.3f} >= {embedding_threshold}. Review manually before merging.",
                             })
-        except Exception:
-            pass
+        except Exception as exc:
+            print(
+                f"Warning: BGE embedding unavailable, using string-only entity matching: {exc}",
+                file=sys.stderr,
+            )
     return sorted(
         candidates,
         key=lambda item: (
