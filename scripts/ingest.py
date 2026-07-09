@@ -1228,6 +1228,8 @@ def ingest_local_source(
     fallback_title = humanize_name(source_path.stem)
     title = title_override.strip() or extract_title_from_markdown(normalized_text, fallback_title)
     slug = slugify(title, "source")
+    while len(slug.encode("utf-8")) > 200:
+        slug = slug[:-1]
     raw_path = unique_path(root / "raw" / raw_dir / f"{today_str()}-{slug}{source_path.suffix.lower()}")
     normalized_path = unique_path(root / "normalized" / raw_dir / f"{today_str()}-{slug}.md")
     shutil.copy2(source_path, raw_path)

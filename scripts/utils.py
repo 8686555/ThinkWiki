@@ -12,6 +12,8 @@ Usage:
 """
 
 
+import sys
+import hashlib
 import json
 import os
 import re
@@ -91,6 +93,8 @@ def entity_label_keys(label: str) -> list[str]:
         stem_compact = "".join(stem_tokens).strip()
         if stem_compact:
             keys.append(stem_compact)
+    emb_digest = hashlib.sha256("|".join(keys).encode("utf-8")).hexdigest()[:16]
+    keys.append(f"emb:{emb_digest}")
     return unique_strings(keys)
 
 
@@ -100,7 +104,11 @@ def clean_string_list(value: object) -> list[str]:
     return [str(item).strip() for item in value if str(item).strip()]
 
 
-def ambiguous_entity_merge_candidates(entity_nodes: list[dict[str, object]]) -> tuple[list[dict[str, object]], int]:
+def ambiguous_entity_merge_candidates(
+    entity_nodes: list[dict[str, object]],
+    embedding_threshold: float = 0.85,
+    embedding_enabled: bool = True,
+) -> tuple[list[dict[str, object]], int]:
     key_to_entities: dict[str, dict[str, object]] = {}
     entity_labels: dict[str, str] = {}
     for node in entity_nodes:
@@ -132,6 +140,39 @@ def ambiguous_entity_merge_candidates(entity_nodes: list[dict[str, object]]) -> 
             "labels": labels,
             "reason": f"Identity key `{identity_key}` matches {len(entity_ids)} entity pages. Review manually before merging.",
         })
+
+    if embedding_enabled and len(entity_labels) >= 2:
+        try:
+            from bge_client import bge_embed, cosine_similarity
+
+            string_grouped_pairs: set[frozenset[str]] = set()
+            for candidate in candidates:
+                ids = [str(item) for item in candidate["entityIds"]]
+                for index, id_a in enumerate(ids):
+                    for id_b in ids[index + 1:]:
+                        string_grouped_pairs.add(frozenset({id_a, id_b}))
+
+            entity_ids_ordered = list(entity_labels.keys())
+            labels_ordered = [entity_labels[eid] for eid in entity_ids_ordered]
+            vectors = bge_embed(labels_ordered)
+            if vectors and len(vectors) == len(entity_ids_ordered):
+                for i, id_a in enumerate(entity_ids_ordered):
+                    for j in range(i + 1, len(entity_ids_ordered)):
+                        id_b = entity_ids_ordered[j]
+                        if frozenset({id_a, id_b}) in string_grouped_pairs:
+                            continue
+                        sim = cosine_similarity(vectors[i], vectors[j])
+                        if sim >= embedding_threshold:
+                            ambiguous_entity_ids.update({id_a, id_b})
+                            candidates.append({
+                                "identityKey": f"emb:{sim:.3f}",
+                                "entityIds": [id_a, id_b],
+                                "titles": [entity_labels.get(id_a, id_a), entity_labels.get(id_b, id_b)],
+                                "labels": [entity_labels.get(id_a, id_a), entity_labels.get(id_b, id_b)],
+                                "reason": f"Semantic similarity {sim:.3f} >= {embedding_threshold}. Review manually before merging.",
+                            })
+        except Exception:
+            pass
     return sorted(
         candidates,
         key=lambda item: (

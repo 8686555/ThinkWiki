@@ -167,6 +167,17 @@ openclaw browser --browser-profile openclaw open http://127.0.0.1:8765/index.htm
 
 如果只需要 URL 列表、不想启动常驻服务，可使用 `serve --print-urls`。
 
+## 环境变量
+
+ThinkWiki 的部分功能需要 API key：
+
+| 变量 | 必需 | 用途 |
+|------|------|------|
+| `MINIMAX_API_KEY` | 否（可选） | MiniMax M2.7 内容生成；未设置则回退到启发式算法 |
+| `SILICONFLOW_API_KEY` | 否（可选） | SiliconFlow 免费 BGE-M3 embedding，用于实体归并去重；不设置则退化为纯字符串匹配 |
+
+`MINIMAX_API_KEY` 未设置时 `crystallize` 和 `digest` 会优雅回退到启发式算法。`SILICONFLOW_API_KEY` 可在 https://siliconflow.cn 免费注册获取。
+
 ## 手动安装（可选）
 
 如果你希望自己安装，而不是让 Agent 代劳：

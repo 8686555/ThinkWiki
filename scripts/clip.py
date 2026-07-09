@@ -108,6 +108,8 @@ def clip_local_source(root: Path, source_path: Path, title_override: str) -> tup
     fallback_title = humanize_name(source_path.stem)
     title = title_override.strip() or extract_title_from_markdown(normalized_text, fallback_title)
     slug = slugify(title, "clip")
+    while len(slug.encode("utf-8")) > 200:
+        slug = slug[:-1]
     raw_path = unique_path(root / "raw" / "inbox" / f"{today_str()}-{slug}{source_path.suffix.lower()}")
     normalized_path = unique_path(root / "normalized" / "inbox" / f"{today_str()}-{slug}.md")
     shutil.copy2(source_path, raw_path)

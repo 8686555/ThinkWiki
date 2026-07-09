@@ -41,6 +41,17 @@ ThinkWiki is a single public skill for working with a local Markdown knowledge b
 - The user only wants general chat without knowledge capture, lookup, or maintenance.
 - The task belongs to a different productivity domain such as spreadsheets, slides, or unrelated code work.
 
+## Required Environment Variables
+
+ThinkWiki needs these variables for AI-powered features:
+
+| Variable | Required | Used By | Notes |
+|----------|----------|---------|-------|
+| `MINIMAX_API_KEY` | No (optional) | `m27_client.py` | MiniMax M2.7 API key for content generation; falls back to heuristics if unset |
+| `SILICONFLOW_API_KEY` | No (optional) | `bge_client.py` | SiliconFlow free BGE-M3 embedding API (`BAAI/bge-m3`); entity merge falls back to string-only matching if unset or unreachable |
+
+Without `MINIMAX_API_KEY`, `crystallize` and `digest` will fall back to heuristics. `SILICONFLOW_API_KEY` is optional — register at https://siliconflow.cn to get a free key, entity merge degrades gracefully without it.
+
 ## Root Resolution
 
 - If the user provides a wiki path, use it directly.

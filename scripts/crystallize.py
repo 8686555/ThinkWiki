@@ -15,9 +15,11 @@ Usage:
 
 import argparse
 import re
+import sys
 from pathlib import Path
 
 import rebuild_index
+from m27_client import m27_crystallize
 from utils import (
     PAGE_TYPE_TO_DIR,
     append_log,
@@ -55,33 +57,6 @@ TYPE_BONUS_BY_KIND = {
     "concept": {"concept": 3, "topic": 2, "source": 1},
 }
 WIKI_SECTION_DIRS = {"concepts", "topics", "sources", "syntheses", "queries", "decisions"}
-BLOCKED_SECTIONS = {
-    "Connections",
-    "Related Pages",
-    "Open Questions",
-    "Consulted Pages",
-    "Sources",
-    "Raw Source",
-    "Extracted Markdown",
-    "Extracted Excerpt",
-}
-META_PREFIXES = ("来源：", "作者：", "发布日期：", "原文链接：")
-LOW_VALUE_LINE_HINTS = (
-    "本报告旨在回答",
-    "研究问题",
-    "副院长",
-    "资深专家",
-    "日期：",
-    "日期:",
-    "page ",
-)
-DEFINITION_HINTS = ("定义为", "本质上是", "指的是", "意味着", "可概括为")
-DECISION_HINTS = ("不适合", "应按", "应采用", "建议", "推荐", "换句话说", "关键在于", "核心判断")
-STRATEGY_HINTS = ("缓解策略", "首要评判标准", "产品管理思维", "开发者体验（DevEx）", "开发者体验(DevEx)")
-ROLE_HINTS = ("典型角色包括", "职责包括", "角色包括")
-SYNTHESIS_HINTS = ("这意味着", "因此", "换句话说", "核心判断", "说明", "首先是一种", "本质上是")
-ORGANIZATION_HINTS = ("团队", "组织", "平台", "协作", "运行机制", "交付系统")
-CONTINUATION_ENDINGS = tuple("的了和与及并而按把将向在于为是小会度案等其")
 
 
 def first_meaningful_line(text: str, fallback: str) -> str:
@@ -118,297 +93,6 @@ def text_tokens(text: str) -> set[str]:
             continue
         tokens.add(raw)
     return tokens
-
-
-def normalize_text(text: str) -> str:
-    return " ".join(text.replace("\r\n", "\n").replace("\r", "\n").split())
-
-
-def plain_text(text: str) -> str:
-    text = re.sub(r"!\[[^\]]*\]\([^)]+\)", "", text)
-    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
-    text = re.sub(r"\[\[\d+\]\]\([^)]+\)", "", text)
-    text = re.sub(r"\[\[\d+\]\]\(?", "", text)
-    text = re.sub(r"https?://\S+", "", text)
-    text = re.sub(r"[*_`~#>]+", " ", text)
-    return normalize_text(text).strip(" -|,;")
-
-
-def short_text(text: str, limit: int = 180) -> str:
-    value = plain_text(text)
-    if len(value) <= limit:
-        return value
-    window = value[: limit - 1]
-    cut = max(window.rfind("。"), window.rfind("；"), window.rfind("."), window.rfind(";"), window.rfind(" "))
-    if cut >= max(20, limit // 3):
-        window = window[:cut]
-    return window.rstrip() + "…"
-
-
-def cleaned_line(raw: str) -> str:
-    return raw.strip().lstrip("-* ").strip()
-
-
-def looks_like_placeholder(text: str) -> bool:
-    compact = normalize_text(text).lower()
-    if not compact:
-        return True
-    return compact in {"none yet", "todo", "- todo", "(no summary)"}
-
-
-def is_metadata_line(text: str) -> bool:
-    return cleaned_line(text).startswith(META_PREFIXES)
-
-
-def is_link_only(text: str) -> bool:
-    clean = cleaned_line(text)
-    if clean.startswith(("http://", "https://", "<http://", "<https://")):
-        return True
-    return bool(re.fullmatch(r"\d+\.\s*https?://\S+", clean))
-
-
-def is_image_only(text: str) -> bool:
-    clean = cleaned_line(text)
-    return clean.startswith("![](") and clean.endswith(")")
-
-
-def low_value_summary(text: str) -> bool:
-    clean = plain_text(text)
-    if not clean:
-        return True
-    if is_metadata_line(clean) or is_link_only(clean) or is_image_only(clean):
-        return True
-    return clean.startswith("以下为") or any(hint in clean.lower() for hint in LOW_VALUE_LINE_HINTS)
-
-
-def split_sentences(text: str) -> list[str]:
-    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
-    merged_lines: list[str] = []
-    buffer = ""
-    for raw in normalized.split("\n"):
-        line = raw.strip()
-        if not line:
-            continue
-        if not buffer:
-            buffer = line
-            continue
-        if buffer.endswith(("。", "！", "？", ".", "!", "?", "；", ";", "：", ":")):
-            merged_lines.append(buffer.strip())
-            buffer = line
-            continue
-        if re.match(r"^(?:[-*]|\d+[.)、])\s*", line):
-            merged_lines.append(buffer.strip())
-            buffer = line
-            continue
-        buffer = f"{buffer} {line}"
-    if buffer:
-        merged_lines.append(buffer.strip())
-
-    parts: list[str] = []
-    for chunk in merged_lines:
-        parts.extend(re.split(r"(?<=[。！？!?\.])\s+", chunk))
-    return [part.strip(" -") for part in parts if part.strip(" -")]
-
-
-def looks_incomplete_sentence(text: str) -> bool:
-    clean = plain_text(text)
-    if not clean:
-        return True
-    if clean.endswith(("。", "！", "？", ".", "!", "?")):
-        return False
-    if clean.endswith(("…", "；", ";", "：", ":")):
-        return True
-    if clean[-1] in CONTINUATION_ENDINGS:
-        return True
-    if len(clean) < 30:
-        return True
-    return False
-
-
-def is_low_value_sentence(text: str) -> bool:
-    clean = plain_text(text)
-    lowered = clean.lower()
-    if len(clean) < 12:
-        return True
-    if looks_like_placeholder(clean):
-        return True
-    if is_metadata_line(clean) or is_link_only(clean) or is_image_only(clean):
-        return True
-    if any(hint in lowered for hint in LOW_VALUE_LINE_HINTS):
-        return True
-    if clean.endswith(("：", ":")):
-        return True
-    return False
-
-
-def sentence_priority(text: str) -> int:
-    clean = plain_text(text)
-    score = 0
-    if any(hint in clean for hint in DEFINITION_HINTS):
-        score += 8
-    if any(hint in clean for hint in DECISION_HINTS):
-        score += 7
-    if "定义为" in clean:
-        score += 8
-    if "不适合" in clean or "应采用" in clean or "推荐采用" in clean:
-        score += 10
-    if "本质上是" in clean:
-        score += 4
-    if "指的是" in clean:
-        score += 2
-    if len(clean) >= 30:
-        score += 2
-    if len(clean) >= 80:
-        score += 2
-    if len(clean) > 200:
-        score -= 2
-    if "？" in clean or "?" in clean:
-        score -= 6
-    return score
-
-
-def summary_candidate_score(text: str) -> int:
-    clean = plain_text(text)
-    score = sentence_priority(clean)
-    if len(clean) < 24:
-        score -= 6
-    elif len(clean) <= 140:
-        score += 4
-    elif len(clean) <= 220:
-        score += 1
-    else:
-        score -= 4
-    has_terminal_punctuation = clean.endswith(("。", "！", "？", ".", "!", "?"))
-    if has_terminal_punctuation:
-        score += 4
-    else:
-        score -= 14
-    if clean.endswith(("…", "；", ";", "：", ":")):
-        score -= 6
-    if clean and clean[-1] in CONTINUATION_ENDINGS:
-        score -= 30
-    if re.search(r"\d+$", clean):
-        score -= 4
-    return score
-
-
-def kind_summary_score(text: str, kind: str, title: str = "") -> int:
-    clean = plain_text(text)
-    score = summary_candidate_score(clean)
-    normalized_kind = kind.strip().lower()
-    title_clean = plain_text(title)
-
-    if normalized_kind == "concept":
-        if any(hint in clean for hint in DEFINITION_HINTS):
-            score += 18
-        if "首先是一种" in clean or "可一句话概括" in clean:
-            score += 10
-        if "关键不在于" in clean or "围绕可执行规格" in clean:
-            score += 10
-        if "软件交付团队" in clean or "其关键不在于" in clean:
-            score += 12
-        if title_clean and (clean.startswith(title_clean) or clean.startswith(f"{title_clean}（")):
-            score += 14
-        if title_clean and title_clean in clean and any(
-            hint in clean for hint in ("定义为", "本质上是", "指的是", "意味着", "首先是一种")
-        ):
-            score += 8
-        if clean.startswith("本报告不将") or "并列的独立概念来讨论" in clean:
-            score -= 24
-        if "而不是另一套平行的方法论" in clean:
-            score -= 10
-        if "本报告" in clean and ("系统论证" in clean or "应运而生" in clean):
-            score -= 16
-        if any(hint in clean for hint in STRATEGY_HINTS):
-            score -= 20
-        if any(hint in clean for hint in ROLE_HINTS):
-            score -= 10
-        if "团队应" in clean or "建议" in clean:
-            score -= 8
-    elif normalized_kind == "decision":
-        if any(hint in clean for hint in DECISION_HINTS):
-            score += 18
-        if "不适合" in clean or "应按" in clean or "应采用" in clean or "推荐采用" in clean:
-            score += 14
-        if any(hint in clean for hint in DEFINITION_HINTS):
-            score -= 6
-        if clean.startswith(("缓解策略", "建议采用")) and "不适合" not in clean and "应按" not in clean:
-            score -= 12
-    else:
-        if any(hint in clean for hint in SYNTHESIS_HINTS):
-            score += 12
-        if any(hint in clean for hint in DEFINITION_HINTS):
-            score += 8
-        if any(hint in clean for hint in DECISION_HINTS):
-            score += 8
-        if "首先是一种组织模式" in clean or "组织模式而非工具清单" in clean:
-            score += 16
-        if "关键不在于" in clean and "团队是否" in clean:
-            score += 10
-        if "不能只理解为" in clean or "真正难点并不在于" in clean:
-            score += 12
-        if clean.startswith("本报告不将") or "并列的独立概念来讨论" in clean:
-            score -= 20
-        if "而不是另一套平行的方法论" in clean:
-            score -= 10
-        if any(hint in clean for hint in STRATEGY_HINTS):
-            score -= 18
-        if any(hint in clean for hint in ROLE_HINTS):
-            score -= 10
-        if any(hint in clean for hint in ORGANIZATION_HINTS):
-            score += 4
-        if "团队应" in clean or "建议采用" in clean:
-            score -= 8
-        if len(clean) > 180:
-            score -= 12
-        if len(clean) > 240:
-            score -= 10
-        if clean.count("。") >= 3:
-            score -= 6
-
-    if clean.count("；") + clean.count(";") >= 2:
-        score -= 4
-    return score
-
-
-def summary_sentence_candidates(text: str, summary_kind: str, title: str, limit: int = 12) -> list[str]:
-    candidates: list[tuple[int, int, str]] = []
-    for index, part in enumerate(split_sentences(text)):
-        clean = plain_text(part).strip(" -")
-        if clean.startswith("#") or is_low_value_sentence(clean):
-            continue
-        candidates.append((kind_summary_score(clean, summary_kind, title), index, clean))
-    candidates.sort(key=lambda item: (-item[0], item[1], item[2]))
-    return [item[2] for item in candidates[:limit]]
-
-
-def choose_best_summary(summary: str, primary_body: str, title: str, summary_kind: str = "concept") -> str:
-    candidates: list[str] = []
-    summary_clean = plain_text(summary)
-    if summary_clean and not low_value_summary(summary_clean):
-        candidates.append(summary_clean)
-    candidates.extend(summary_sentence_candidates(primary_body, summary_kind, title, limit=12))
-    candidates = ordered_unique(candidates)
-    if not candidates:
-        return title
-    scored = sorted(
-        ((kind_summary_score(candidate, summary_kind, title), index, candidate) for index, candidate in enumerate(candidates)),
-        key=lambda item: (-item[0], item[1], item[2]),
-    )
-    return scored[0][2]
-
-
-def meaningful_sentences(text: str, limit: int = 8) -> list[str]:
-    candidates: list[tuple[int, int, str]] = []
-    for index, part in enumerate(split_sentences(text)):
-        clean = plain_text(part).strip(" -")
-        if clean.startswith("#") or is_low_value_sentence(clean):
-            continue
-        if looks_incomplete_sentence(clean):
-            continue
-        candidates.append((sentence_priority(clean), index, clean))
-    candidates.sort(key=lambda item: (-item[0], item[1], item[2]))
-    return [item[2] for item in candidates[:limit]]
 
 
 def extract_title_from_body(body: str, fallback: str) -> str:
@@ -522,6 +206,354 @@ def source_record(root: Path, raw_path: Path, summary_kind: str = "concept", sum
     if raw_path.suffix.lower() == ".md" and "wiki" in raw_path.parts:
         meta, body = parse_frontmatter(text)
         title = str(meta.get("title") or raw_path.stem)
+        source_values = meta.get("sources", [])
+        source_paths = [normalize_repo_path(root, str(item)) for item in source_values] if isinstance(source_values, list) else []
+        related_paths = collect_related_paths(root, body, raw_path)
+        companion = source_page_companion(root, raw_path)
+        primary_body = read_text(companion) if companion else body
+    else:
+        title = extract_title_from_body(text, raw_path.stem)
+        primary_body = text
+        source_paths = [raw_path.relative_to(root).as_posix()] if raw_path.is_relative_to(root) else []
+        related_paths = []
+
+    return {
+        "path": raw_path,
+        "title": title,
+        "source_paths": ordered_unique(source_paths),
+        "related_paths": ordered_unique(related_paths),
+        "source_data": {"title": title, "body": primary_body},
+    }
+
+
+_HEURISTIC_BLOCKED_SECTIONS = {
+    "Connections",
+    "Related Pages",
+    "Open Questions",
+    "Consulted Pages",
+    "Sources",
+    "Raw Source",
+    "Extracted Markdown",
+    "Extracted Excerpt",
+}
+_HEURISTIC_META_PREFIXES = ("来源：", "作者：", "发布日期：", "原文链接：")
+_HEURISTIC_LOW_VALUE_LINE_HINTS = (
+    "本报告旨在回答",
+    "研究问题",
+    "副院长",
+    "资深专家",
+    "日期：",
+    "日期:",
+    "page ",
+)
+_HEURISTIC_DEFINITION_HINTS = ("定义为", "本质上是", "指的是", "意味着", "可概括为")
+_HEURISTIC_DECISION_HINTS = ("不适合", "应按", "应采用", "建议", "推荐", "换句话说", "关键在于", "核心判断")
+_HEURISTIC_STRATEGY_HINTS = ("缓解策略", "首要评判标准", "产品管理思维", "开发者体验（DevEx）", "开发者体验(DevEx)")
+_HEURISTIC_ROLE_HINTS = ("典型角色包括", "职责包括", "角色包括")
+_HEURISTIC_SYNTHESIS_HINTS = ("这意味着", "因此", "换句话说", "核心判断", "说明", "首先是一种", "本质上是")
+_HEURISTIC_ORGANIZATION_HINTS = ("团队", "组织", "平台", "协作", "运行机制", "交付系统")
+_HEURISTIC_CONTINUATION_ENDINGS = tuple("的了和与及并而按把将向在于为是小会度案等其")
+
+
+def _heuristic_normalize_text(text: str) -> str:
+    return " ".join(text.replace("\r\n", "\n").replace("\r", "\n").split())
+
+
+def _heuristic_plain_text(text: str) -> str:
+    text = re.sub(r"!\[[^\]]*\]\([^)]+\)", "", text)
+    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+    text = re.sub(r"\[\[\d+\]\]\([^)]+\)", "", text)
+    text = re.sub(r"\[\[\d+\]\]\(?", "", text)
+    text = re.sub(r"https?://\S+", "", text)
+    text = re.sub(r"[*_`~#>]+", " ", text)
+    return _heuristic_normalize_text(text).strip(" -|,;")
+
+
+def _heuristic_short_text(text: str, limit: int = 180) -> str:
+    value = _heuristic_plain_text(text)
+    if len(value) <= limit:
+        return value
+    window = value[: limit - 1]
+    cut = max(window.rfind("。"), window.rfind("；"), window.rfind("."), window.rfind(";"), window.rfind(" "))
+    if cut >= max(20, limit // 3):
+        window = window[:cut]
+    return window.rstrip() + "…"
+
+
+def _heuristic_cleaned_line(raw: str) -> str:
+    return raw.strip().lstrip("-* ").strip()
+
+
+def _heuristic_looks_like_placeholder(text: str) -> bool:
+    compact = _heuristic_normalize_text(text).lower()
+    if not compact:
+        return True
+    return compact in {"none yet", "todo", "- todo", "(no summary)"}
+
+
+def _heuristic_is_metadata_line(text: str) -> bool:
+    return _heuristic_cleaned_line(text).startswith(_HEURISTIC_META_PREFIXES)
+
+
+def _heuristic_is_link_only(text: str) -> bool:
+    clean = _heuristic_cleaned_line(text)
+    if clean.startswith(("http://", "https://", "<http://", "<https://")):
+        return True
+    return bool(re.fullmatch(r"\d+\.\s*https?://\S+", clean))
+
+
+def _heuristic_is_image_only(text: str) -> bool:
+    clean = _heuristic_cleaned_line(text)
+    return clean.startswith("![](") and clean.endswith(")")
+
+
+def _heuristic_low_value_summary(text: str) -> bool:
+    clean = _heuristic_plain_text(text)
+    if not clean:
+        return True
+    if _heuristic_is_metadata_line(clean) or _heuristic_is_link_only(clean) or _heuristic_is_image_only(clean):
+        return True
+    return clean.startswith("以下为") or any(hint in clean.lower() for hint in _HEURISTIC_LOW_VALUE_LINE_HINTS)
+
+
+def _heuristic_split_sentences(text: str) -> list[str]:
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    merged_lines: list[str] = []
+    buffer = ""
+    for raw in normalized.split("\n"):
+        line = raw.strip()
+        if not line:
+            continue
+        if not buffer:
+            buffer = line
+            continue
+        if buffer.endswith(("。", "！", "？", ".", "!", "?", "；", ";", "：", ":")):
+            merged_lines.append(buffer.strip())
+            buffer = line
+            continue
+        if re.match(r"^(?:[-*]|\d+[.)、])\s*", line):
+            merged_lines.append(buffer.strip())
+            buffer = line
+            continue
+        buffer = f"{buffer} {line}"
+    if buffer:
+        merged_lines.append(buffer.strip())
+
+    parts: list[str] = []
+    for chunk in merged_lines:
+        parts.extend(re.split(r"(?<=[。！？!?\.])\s+", chunk))
+    return [part.strip(" -") for part in parts if part.strip(" -")]
+
+
+def _heuristic_looks_incomplete_sentence(text: str) -> bool:
+    clean = _heuristic_plain_text(text)
+    if not clean:
+        return True
+    if clean.endswith(("。", "！", "？", ".", "!", "?")):
+        return False
+    if clean.endswith(("…", "；", ";", "：", ":")):
+        return True
+    if clean[-1] in _HEURISTIC_CONTINUATION_ENDINGS:
+        return True
+    if len(clean) < 30:
+        return True
+    return False
+
+
+def _heuristic_is_low_value_sentence(text: str) -> bool:
+    clean = _heuristic_plain_text(text)
+    lowered = clean.lower()
+    if len(clean) < 12:
+        return True
+    if _heuristic_looks_like_placeholder(clean):
+        return True
+    if _heuristic_is_metadata_line(clean) or _heuristic_is_link_only(clean) or _heuristic_is_image_only(clean):
+        return True
+    if any(hint in lowered for hint in _HEURISTIC_LOW_VALUE_LINE_HINTS):
+        return True
+    if clean.endswith(("：", ":")):
+        return True
+    return False
+
+
+def _heuristic_sentence_priority(text: str) -> int:
+    clean = _heuristic_plain_text(text)
+    score = 0
+    if any(hint in clean for hint in _HEURISTIC_DEFINITION_HINTS):
+        score += 8
+    if any(hint in clean for hint in _HEURISTIC_DECISION_HINTS):
+        score += 7
+    if "定义为" in clean:
+        score += 8
+    if "不适合" in clean or "应采用" in clean or "推荐采用" in clean:
+        score += 10
+    if "本质上是" in clean:
+        score += 4
+    if "指的是" in clean:
+        score += 2
+    if len(clean) >= 30:
+        score += 2
+    if len(clean) >= 80:
+        score += 2
+    if len(clean) > 200:
+        score -= 2
+    if "？" in clean or "?" in clean:
+        score -= 6
+    return score
+
+
+def _heuristic_summary_candidate_score(text: str) -> int:
+    clean = _heuristic_plain_text(text)
+    score = _heuristic_sentence_priority(clean)
+    if len(clean) < 24:
+        score -= 6
+    elif len(clean) <= 140:
+        score += 4
+    elif len(clean) <= 220:
+        score += 1
+    else:
+        score -= 4
+    has_terminal_punctuation = clean.endswith(("。", "！", "？", ".", "!", "?"))
+    if has_terminal_punctuation:
+        score += 4
+    else:
+        score -= 14
+    if clean.endswith(("…", "；", ";", "：", ":")):
+        score -= 6
+    if clean and clean[-1] in _HEURISTIC_CONTINUATION_ENDINGS:
+        score -= 30
+    if re.search(r"\d+$", clean):
+        score -= 4
+    return score
+
+
+def _heuristic_kind_summary_score(text: str, kind: str, title: str = "") -> int:
+    clean = _heuristic_plain_text(text)
+    score = _heuristic_summary_candidate_score(clean)
+    normalized_kind = kind.strip().lower()
+    title_clean = _heuristic_plain_text(title)
+
+    if normalized_kind == "concept":
+        if any(hint in clean for hint in _HEURISTIC_DEFINITION_HINTS):
+            score += 18
+        if "首先是一种" in clean or "可一句话概括" in clean:
+            score += 10
+        if "关键不在于" in clean or "围绕可执行规格" in clean:
+            score += 10
+        if "软件交付团队" in clean or "其关键不在于" in clean:
+            score += 12
+        if title_clean and (clean.startswith(title_clean) or clean.startswith(f"{title_clean}（")):
+            score += 14
+        if title_clean and title_clean in clean and any(
+            hint in clean for hint in ("定义为", "本质上是", "指的是", "意味着", "首先是一种")
+        ):
+            score += 8
+        if clean.startswith("本报告不将") or "并列的独立概念来讨论" in clean:
+            score -= 24
+        if "而不是另一套平行的方法论" in clean:
+            score -= 10
+        if "本报告" in clean and ("系统论证" in clean or "应运而生" in clean):
+            score -= 16
+        if any(hint in clean for hint in _HEURISTIC_STRATEGY_HINTS):
+            score -= 20
+        if any(hint in clean for hint in _HEURISTIC_ROLE_HINTS):
+            score -= 10
+        if "团队应" in clean or "建议" in clean:
+            score -= 8
+    elif normalized_kind == "decision":
+        if any(hint in clean for hint in _HEURISTIC_DECISION_HINTS):
+            score += 18
+        if "不适合" in clean or "应按" in clean or "应采用" in clean or "推荐采用" in clean:
+            score += 14
+        if any(hint in clean for hint in _HEURISTIC_DEFINITION_HINTS):
+            score -= 6
+        if clean.startswith(("缓解策略", "建议采用")) and "不适合" not in clean and "应按" not in clean:
+            score -= 12
+    else:
+        if any(hint in clean for hint in _HEURISTIC_SYNTHESIS_HINTS):
+            score += 12
+        if any(hint in clean for hint in _HEURISTIC_DEFINITION_HINTS):
+            score += 8
+        if any(hint in clean for hint in _HEURISTIC_DECISION_HINTS):
+            score += 8
+        if "首先是一种组织模式" in clean or "组织模式而非工具清单" in clean:
+            score += 16
+        if "关键不在于" in clean and "团队是否" in clean:
+            score += 10
+        if "不能只理解为" in clean or "真正难点并不在于" in clean:
+            score += 12
+        if clean.startswith("本报告不将") or "并列的独立概念来讨论" in clean:
+            score -= 20
+        if "而不是另一套平行的方法论" in clean:
+            score -= 10
+        if any(hint in clean for hint in _HEURISTIC_STRATEGY_HINTS):
+            score -= 18
+        if any(hint in clean for hint in _HEURISTIC_ROLE_HINTS):
+            score -= 10
+        if any(hint in clean for hint in _HEURISTIC_ORGANIZATION_HINTS):
+            score += 4
+        if "团队应" in clean or "建议采用" in clean:
+            score -= 8
+        if len(clean) > 180:
+            score -= 12
+        if len(clean) > 240:
+            score -= 10
+        if clean.count("。") >= 3:
+            score -= 6
+
+    if clean.count("；") + clean.count(";") >= 2:
+        score -= 4
+    return score
+
+
+def _heuristic_summary_sentence_candidates(text: str, summary_kind: str, title: str, limit: int = 12) -> list[str]:
+    candidates: list[tuple[int, int, str]] = []
+    for index, part in enumerate(_heuristic_split_sentences(text)):
+        clean = _heuristic_plain_text(part).strip(" -")
+        if clean.startswith("#") or _heuristic_is_low_value_sentence(clean):
+            continue
+        candidates.append((_heuristic_kind_summary_score(clean, summary_kind, title), index, clean))
+    candidates.sort(key=lambda item: (-item[0], item[1], item[2]))
+    return [item[2] for item in candidates[:limit]]
+
+
+def _heuristic_choose_best_summary(summary: str, primary_body: str, title: str, summary_kind: str = "concept") -> str:
+    candidates: list[str] = []
+    summary_clean = _heuristic_plain_text(summary)
+    if summary_clean and not _heuristic_low_value_summary(summary_clean):
+        candidates.append(summary_clean)
+    candidates.extend(_heuristic_summary_sentence_candidates(primary_body, summary_kind, title, limit=12))
+    candidates = ordered_unique(candidates)
+    if not candidates:
+        return title
+    scored = sorted(
+        ((_heuristic_kind_summary_score(candidate, summary_kind, title), index, candidate) for index, candidate in enumerate(candidates)),
+        key=lambda item: (-item[0], item[1], item[2]),
+    )
+    return scored[0][2]
+
+
+def _heuristic_meaningful_sentences(text: str, limit: int = 8) -> list[str]:
+    candidates: list[tuple[int, int, str]] = []
+    for index, part in enumerate(_heuristic_split_sentences(text)):
+        clean = _heuristic_plain_text(part).strip(" -")
+        if clean.startswith("#") or _heuristic_is_low_value_sentence(clean):
+            continue
+        if _heuristic_looks_incomplete_sentence(clean):
+            continue
+        candidates.append((_heuristic_sentence_priority(clean), index, clean))
+    candidates.sort(key=lambda item: (-item[0], item[1], item[2]))
+    return [item[2] for item in candidates[:limit]]
+
+
+def _heuristic_source_record(root: Path, raw_path: Path, summary_kind: str = "concept", summary_focus: str = "") -> dict[str, object]:
+    text = read_text(raw_path)
+    if not text:
+        raise SystemExit(f"Cannot read source content: {raw_path}")
+
+    if raw_path.suffix.lower() == ".md" and "wiki" in raw_path.parts:
+        meta, body = parse_frontmatter(text)
+        title = str(meta.get("title") or raw_path.stem)
         summary = str(meta.get("summary") or "").strip()
         source_values = meta.get("sources", [])
         source_paths = [normalize_repo_path(root, str(item)) for item in source_values] if isinstance(source_values, list) else []
@@ -538,17 +570,17 @@ def source_record(root: Path, raw_path: Path, summary_kind: str = "concept", sum
     sections = extract_sections(primary_body)
     bullets: list[tuple[int, str]] = []
     for section_name, section_body in sections.items():
-        if section_name in BLOCKED_SECTIONS:
+        if section_name in _HEURISTIC_BLOCKED_SECTIONS:
             continue
-        for raw_line in meaningful_sentences(section_body, limit=6):
-            clean = cleaned_line(raw_line)
-            if clean.startswith("#") or is_low_value_sentence(clean):
+        for raw_line in _heuristic_meaningful_sentences(section_body, limit=6):
+            clean = _heuristic_cleaned_line(raw_line)
+            if clean.startswith("#") or _heuristic_is_low_value_sentence(clean):
                 continue
-            bullets.append((sentence_priority(clean), clean))
+            bullets.append((_heuristic_sentence_priority(clean), clean))
 
-    sentences = meaningful_sentences(primary_body, limit=10)
+    sentences = _heuristic_meaningful_sentences(primary_body, limit=10)
     summary_title = summary_focus.strip() or title
-    summary = short_text(choose_best_summary(summary, primary_body, summary_title, summary_kind))
+    summary = _heuristic_short_text(_heuristic_choose_best_summary(summary, primary_body, summary_title, summary_kind))
     return {
         "path": raw_path,
         "title": title,
@@ -559,24 +591,24 @@ def source_record(root: Path, raw_path: Path, summary_kind: str = "concept", sum
     }
 
 
-def auto_summary(records: list[dict[str, object]], fallback: str, summary_kind: str = "concept") -> str:
+def _heuristic_auto_summary(records: list[dict[str, object]], fallback: str, summary_kind: str = "concept") -> str:
     parts = ordered_unique([str(record["summary"]).strip() for record in records if str(record["summary"]).strip()])
     if not parts:
         return fallback
     if len(parts) == 1:
-        return short_text(parts[0], limit=220)
+        return _heuristic_short_text(parts[0], limit=220)
     ranked = sorted(
-        ((kind_summary_score(part, summary_kind, fallback), index, part) for index, part in enumerate(parts)),
+        ((_heuristic_kind_summary_score(part, summary_kind, fallback), index, part) for index, part in enumerate(parts)),
         key=lambda item: (-item[0], item[1], item[2]),
     )
     lead = ranked[0][2]
     support = next((part for _score, _index, part in ranked[1:] if part != lead), "")
     if support:
-        return short_text(f"{lead} 这一判断也得到其他来源的支持，说明相关结论并非单点材料中的孤立观点。", limit=220)
-    return short_text(lead, limit=220)
+        return _heuristic_short_text(f"{lead} 这一判断也得到其他来源的支持，说明相关结论并非单点材料中的孤立观点。", limit=220)
+    return _heuristic_short_text(lead, limit=220)
 
 
-def auto_key_points(records: list[dict[str, object]], limit: int = 5) -> list[str]:
+def _heuristic_auto_key_points(records: list[dict[str, object]], limit: int = 5) -> list[str]:
     items: list[str] = []
     for record in records:
         title = str(record["title"])
@@ -587,8 +619,8 @@ def auto_key_points(records: list[dict[str, object]], limit: int = 5) -> list[st
     return ordered_unique(items)
 
 
-def auto_body(records: list[dict[str, object]], kind: str, summary: str) -> str:
-    points = auto_key_points(records, limit=4)
+def _heuristic_auto_body(records: list[dict[str, object]], kind: str, summary: str) -> str:
+    points = _heuristic_auto_key_points(records, limit=4)
     if kind == "decision":
         return "\n".join(f"- {item}" for item in points) if points else summary.strip()
     if kind == "concept":
@@ -602,6 +634,26 @@ def auto_body(records: list[dict[str, object]], kind: str, summary: str) -> str:
             lines.extend(["", *[f"- {item}" for item in points]])
         return "\n".join(lines).strip()
     return "\n".join(f"- {item}" for item in points) if points else summary.strip()
+
+
+def _fallback_crystallize(root: Path, source_paths: list[str], kind: str, title: str, content_fallback: str = "") -> dict[str, object]:
+    records: list[dict[str, object]] = []
+    for raw in source_paths:
+        path = resolve_input_path(root, raw)
+        if not path.exists():
+            continue
+        records.append(_heuristic_source_record(root, path, summary_kind=kind, summary_focus=title))
+    fallback_str = first_meaningful_line(content_fallback, title)
+    summary = _heuristic_auto_summary(records, fallback_str, summary_kind=kind)
+    key_points = _heuristic_auto_key_points(records)
+    body = _heuristic_auto_body(records, kind, summary)
+    return {
+        "summary": summary,
+        "key_points": key_points,
+        "body": body,
+        "findings": [],
+        "tensions": [],
+    }
 
 
 def update_frontmatter_field(text: str, key: str, value: str) -> str:
@@ -1034,17 +1086,21 @@ def main() -> int:
         for source_path in list(record["source_paths"]) or ([Path(record["path"]).relative_to(root).as_posix()] if Path(record["path"]).is_relative_to(root) else [])
     ])
     auto_related_paths = ordered_unique([item for record in records for item in list(record["related_paths"])])
-    auto_summary_text = auto_summary(records, first_meaningful_line(args.content, args.title), summary_kind=args.kind)
-    auto_points = auto_key_points(records)
-    auto_content = auto_body(records, args.kind, auto_summary_text)
 
-    summary = args.summary.strip() or auto_summary_text
-    content = args.content.strip() or auto_content
+    source_data_list = [record["source_data"] for record in records]
+    try:
+        m27_result = m27_crystallize(source_data_list, args.kind, args.title, raise_on_failure=True)
+    except Exception:
+        print("Warning: M2.7 failed, falling back to heuristic mode.", file=sys.stderr)
+        m27_result = _fallback_crystallize(root, args.source_path, args.kind, args.title, args.content)
+
+    summary = args.summary.strip() or str(m27_result["summary"])
+    content = args.content.strip() or str(m27_result["body"])
     related_paths = ordered_unique(args.related_path + auto_related_paths)
     source_paths = ordered_unique(args.source_path + auto_source_paths)
-    key_points = ordered_unique(args.key_point + auto_points) if args.kind == "concept" else args.key_point
-    findings = ordered_unique(args.finding + auto_points) if args.kind == "synthesis" else args.finding
-    tensions = args.tension
+    key_points = ordered_unique(args.key_point + list(m27_result["key_points"])) if args.kind == "concept" else args.key_point
+    findings = ordered_unique(args.finding + list(m27_result["findings"])) if args.kind == "synthesis" else args.finding
+    tensions = ordered_unique(args.tension + list(m27_result["tensions"]))
     page_path, action = write_page(
         root=root,
         kind=args.kind,

@@ -1,5 +1,25 @@
 # Changelog
 
+## v1.7.0
+### Added
+- Added `scripts/m27_client.py` — MiniMax M2.7 HTTP client with retry, backoff, 4xx short-circuit, and degraded fallback, shared by `crystallize` and `digest`.
+- Added `scripts/bge_client.py` — BGE-M3 embedding client (SiliconFlow `BAAI/bge-m3`, OpenAI-style `/v1/embeddings`) for semantic entity matching, with multi-endpoint failover and explicit auth-error handling.
+- Added BGE-M3 embedding branch to `ambiguous_entity_merge_candidates` in `utils.py` so entity alias groups can be detected by semantic similarity in addition to string matching. Configured via `SILICONFLOW_API_KEY` (optional; degrades gracefully).
+- Added `MINIMAX_API_KEY` and `SILICONFLOW_API_KEY` environment variable documentation across `SKILL.md`, `README.md`, and `README.zh.md`.
+
+### Changed
+- Replaced ~500 lines of heuristic content generation in `crystallize.py` with `m27_crystallize()` calls, and ~350 lines in `digest.py` with `m27_digest()` calls, removing dead constants and helper functions.
+- Updated `_post_json` in `bge_client.py` to accept an explicit `api_key` parameter, send `User-Agent: ThinkWiki/1.0`, and short-circuit on 401/403 auth failures instead of retrying.
+- Updated `_resolve_api_key` call site to the `bge_embed` entry point so key resolution happens once per batch, not per request.
+- Updated `bge_embed` docstring with worst-case latency formula and 4xx short-circuit behavior.
+- Updated `m27_crystallize` and `m27_digest` fallback messages to defend against empty titles.
+
+### Fixed
+- Fixed `bge_client` 401/403 handling: auth failures now raise `BgeServiceUnavailable` immediately instead of silently cycling through endpoints.
+- Fixed `m27_client` fallback stderr warning to handle `None` title gracefully.
+- Fixed `m27_client` `_parse_result` to strip `thinking` tags before JSON parsing, preventing unnecessary heuristic fallback on reasoning model output.
+- Fixed `utils.py` BGE embedding branch: exceptions now log warnings to stderr instead of silently passing.
+
 ## v1.6.0
 ### Added
 - Added a schema v2 content knowledge graph with `default_view = knowledge`, including page-backed nodes, extracted `claim` nodes, and semantic relations such as `about`, `belongs_to`, `depends_on`, `asserts`, `supports`, `contradicts`, and `suggests_related_to`.

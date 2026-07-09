@@ -167,6 +167,17 @@ On other agents, open the same URL in your system browser, or use whatever brows
 
 Use `serve --print-urls` when you only need the URL list without starting the server.
 
+## Environment Variables
+
+Some ThinkWiki features require API keys:
+
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `MINIMAX_API_KEY` | No (optional) | MiniMax M2.7 content generation; falls back to heuristics if unset |
+| `SILICONFLOW_API_KEY` | No (optional) | SiliconFlow free BGE-M3 embeddings for entity merge dedup; degrades to string-only matching if unset |
+
+`crystallize` and `digest` gracefully fall back to heuristics without `MINIMAX_API_KEY`. Register for a free `SILICONFLOW_API_KEY` at https://siliconflow.cn.
+
 ## Manual Install (Optional)
 
 If you prefer to set up the skill yourself instead of asking an agent:
