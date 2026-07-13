@@ -169,14 +169,36 @@ Use `serve --print-urls` when you only need the URL list without starting the se
 
 ## Environment Variables
 
-Some ThinkWiki features require API keys:
+Remote AI features are **disabled by default**. Configure only what you need:
+
+### Content generation (`crystallize`, `digest`)
+
+Requires **all three** variables. Any OpenAI-compatible chat completion endpoint works (MiniMax, OpenAI, DeepSeek, local Ollama, etc.).
 
 | Variable | Required | Purpose |
 |----------|----------|---------|
-| `MINIMAX_API_KEY` | No (optional) | MiniMax M2.7 content generation; falls back to heuristics if unset |
-| `SILICONFLOW_API_KEY` | No (optional) | SiliconFlow free BGE-M3 embeddings for entity merge dedup; degrades to string-only matching if unset |
+| `THINKWIKI_LLM_API_KEY` | Yes, to enable | API key for the configured LLM provider |
+| `THINKWIKI_LLM_BASE_URL` | Yes, to enable | Chat completions URL, e.g. `https://api.openai.com/v1/chat/completions` |
+| `THINKWIKI_LLM_MODEL` | Yes, to enable | Model name, e.g. `gpt-4o-mini` or `MiniMax-M3` |
+| `THINKWIKI_LLM_TEMPERATURE` | No | Optional temperature override |
 
-`crystallize` and `digest` gracefully fall back to heuristics without `MINIMAX_API_KEY`. Register for a free `SILICONFLOW_API_KEY` at https://siliconflow.cn.
+Without a complete LLM configuration, `crystallize` and `digest` use local heuristics only.
+
+### Entity embedding (`entity-merge-review`, `graph-report`, `health`)
+
+Enabled when `THINKWIKI_EMBED_API_KEY` is set. Defaults to SiliconFlow BGE-M3; override the endpoint or model if needed.
+
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `THINKWIKI_EMBED_API_KEY` | Yes, to enable | API key for the embedding provider |
+| `THINKWIKI_EMBED_BASE_URL` | No | Embedding URL(s), comma-separated; default `https://api.siliconflow.cn/v1/embeddings` |
+| `THINKWIKI_EMBED_MODEL` | No | Embedding model; default `BAAI/bge-m3` |
+
+Register a free SiliconFlow key at https://siliconflow.cn if you want the default embedding setup.
+
+### Legacy names (deprecated in v1.7.2)
+
+`MINIMAX_API_KEY`, `MINIMAX_BASE_URL`, `MINIMAX_MODEL`, `MINIMAX_TEMPERATURE`, `SILICONFLOW_API_KEY`, and `BGE_ENDPOINTS` still work with a deprecation warning. Migrate to the `THINKWIKI_*` names above.
 
 ## Manual Install (Optional)
 

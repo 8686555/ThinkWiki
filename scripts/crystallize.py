@@ -19,7 +19,8 @@ import sys
 from pathlib import Path
 
 import rebuild_index
-from m27_client import m27_crystallize
+from ai_config import llm_is_configured, resolve_llm_config
+from llm_client import llm_crystallize
 from utils import (
     PAGE_TYPE_TO_DIR,
     append_log,
@@ -1088,19 +1089,28 @@ def main() -> int:
     auto_related_paths = ordered_unique([item for record in records for item in list(record["related_paths"])])
 
     source_data_list = [record["source_data"] for record in records]
-    try:
-        m27_result = m27_crystallize(source_data_list, args.kind, args.title, raise_on_failure=True)
-    except Exception:
-        print("Warning: M2.7 failed, falling back to heuristic mode.", file=sys.stderr)
-        m27_result = _fallback_crystallize(root, args.source_path, args.kind, args.title, args.content)
+    if llm_is_configured():
+        llm_config = resolve_llm_config()
+        print(
+            f"Notice: sending source content to configured LLM at {llm_config.base_url} "
+            f"(model: {llm_config.model}).",
+            file=sys.stderr,
+        )
+        try:
+            llm_result = llm_crystallize(source_data_list, args.kind, args.title, raise_on_failure=True)
+        except Exception:
+            print("Warning: LLM failed, falling back to heuristic mode.", file=sys.stderr)
+            llm_result = _fallback_crystallize(root, args.source_path, args.kind, args.title, args.content)
+    else:
+        llm_result = _fallback_crystallize(root, args.source_path, args.kind, args.title, args.content)
 
-    summary = args.summary.strip() or str(m27_result["summary"])
-    content = args.content.strip() or str(m27_result["body"])
+    summary = args.summary.strip() or str(llm_result["summary"])
+    content = args.content.strip() or str(llm_result["body"])
     related_paths = ordered_unique(args.related_path + auto_related_paths)
     source_paths = ordered_unique(args.source_path + auto_source_paths)
-    key_points = ordered_unique(args.key_point + list(m27_result["key_points"])) if args.kind == "concept" else args.key_point
-    findings = ordered_unique(args.finding + list(m27_result["findings"])) if args.kind == "synthesis" else args.finding
-    tensions = ordered_unique(args.tension + list(m27_result["tensions"]))
+    key_points = ordered_unique(args.key_point + list(llm_result["key_points"])) if args.kind == "concept" else args.key_point
+    findings = ordered_unique(args.finding + list(llm_result["findings"])) if args.kind == "synthesis" else args.finding
+    tensions = ordered_unique(args.tension + list(llm_result["tensions"]))
     page_path, action = write_page(
         root=root,
         kind=args.kind,

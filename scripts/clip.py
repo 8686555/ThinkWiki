@@ -21,6 +21,8 @@ from urllib import error as urllib_error
 from urllib import request as urllib_request
 from urllib.parse import urlparse
 
+from url_safety import safe_urlopen, validate_fetch_url
+
 from ingest import (
     clean_markdown,
     extract_title_from_markdown,
@@ -64,9 +66,13 @@ def media_filename(url: str, index: int) -> str:
 
 
 def download_media(url: str, target: Path) -> bool:
-    request = urllib_request.Request(url, headers={"User-Agent": "ThinkWiki/1.0"})
     try:
-        with urllib_request.urlopen(request, timeout=20) as response:
+        validate_fetch_url(url)
+    except ValueError:
+        return False
+    request = urllib_request.Request(url, headers={"User-Agent": "ThinkWiki/1.7.2"})
+    try:
+        with safe_urlopen(request, timeout=20) as response:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(response.read())
         return True

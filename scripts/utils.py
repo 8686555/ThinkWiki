@@ -23,6 +23,8 @@ from html import escape
 from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
 
+from ai_config import embed_is_configured
+
 ROOT_MARKER = ".wiki-schema.md"
 WIKI_DIRS = ["concepts", "topics", "entities", "sources", "syntheses", "queries", "decisions"]
 GENERIC_ENTITY_SUFFIXES = {
@@ -144,10 +146,18 @@ def ambiguous_entity_merge_candidates(
     if (
         embedding_enabled
         and len(entity_labels) >= 2
-        and os.environ.get("SILICONFLOW_API_KEY", "").strip()
+        and embed_is_configured()
     ):
         try:
-            from bge_client import bge_embed, cosine_similarity
+            from ai_config import resolve_embed_config
+            from embed_client import cosine_similarity, embed_texts
+
+            embed_config = resolve_embed_config()
+            print(
+                f"Notice: sending entity labels to configured embedding API at "
+                f"{', '.join(embed_config.base_urls)} (model: {embed_config.model}).",
+                file=sys.stderr,
+            )
 
             string_grouped_pairs: set[frozenset[str]] = set()
             for candidate in candidates:
@@ -158,7 +168,7 @@ def ambiguous_entity_merge_candidates(
 
             entity_ids_ordered = list(entity_labels.keys())
             labels_ordered = [entity_labels[eid] for eid in entity_ids_ordered]
-            vectors = bge_embed(labels_ordered)
+            vectors = embed_texts(labels_ordered)
             if vectors and len(vectors) == len(entity_ids_ordered):
                 for i, id_a in enumerate(entity_ids_ordered):
                     for j in range(i + 1, len(entity_ids_ordered)):
@@ -177,7 +187,7 @@ def ambiguous_entity_merge_candidates(
                             })
         except Exception as exc:
             print(
-                f"Warning: BGE embedding unavailable, using string-only entity matching: {exc}",
+                f"Warning: embedding API unavailable, using string-only entity matching: {exc}",
                 file=sys.stderr,
             )
     return sorted(

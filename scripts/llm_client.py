@@ -1,37 +1,26 @@
 from __future__ import annotations
 
 """
-ThinkWiki Module: m27_client
+ThinkWiki Module: llm_client
 
 Purpose:
-- Shared MiniMax M2.7 HTTP client for crystallize and digest content generation.
-- Exposes m27_crystallize (multi-source concept/decision/synthesis/query) and m27_digest (synthesis).
-- Uses urllib.request only — no third-party dependencies.
-
-Usage:
-- Imported by crystallize.py and digest.py.
-- Not intended for direct execution.
+- OpenAI-compatible chat completion client for crystallize and digest.
+- Disabled unless THINKWIKI_LLM_* environment variables are fully configured.
 """
 
-
 import json
-import os
 import re
 import sys
 import time
 from urllib import error as urllib_error
 from urllib import request as urllib_request
 
-M27_TIMEOUT = 60
-M27_RETRIES = 3
-DEFAULT_BASE_URL = "https://api.minimaxi.com/v1/chat/completions"
-DEFAULT_MODEL = "MiniMax-M3"
-# Follows clip.py convention: simple "ThinkWiki/<version>" format.
-# Version is manually maintained; for env override, see _resolve_temperature's pattern.
-USER_AGENT = "ThinkWiki/1.0"
+from ai_config import resolve_llm_config, resolve_llm_temperature
 
-# Length must equal M27_RETRIES - 1: the last retry doesn't need backoff
-# (it fails and raises immediately). If M27_RETRIES changes, update this list.
+LLM_TIMEOUT = 60
+LLM_RETRIES = 3
+USER_AGENT = "ThinkWiki/1.7.2"
+
 _RETRY_BACKOFFS = [2, 5]
 
 _TEMPERATURE_BY_KIND: dict[str, float] = {
@@ -107,71 +96,55 @@ def _format_sources(sources: list[dict[str, str]]) -> str:
     return "\n\n".join(parts)
 
 
-def _resolve_temperature(kind: str) -> float:
-    env_override = os.environ.get("MINIMAX_TEMPERATURE", "").strip()
-    if env_override:
-        try:
-            return float(env_override)
-        except ValueError:
-            default = _TEMPERATURE_BY_KIND.get(kind, 0.5)
-            print(f"Warning: MINIMAX_TEMPERATURE='{env_override}' is not a valid number; using kind default ({default}).", file=sys.stderr)
-    return _TEMPERATURE_BY_KIND.get(kind, 0.5)
-
-
-def _call_m27(messages: list[dict[str, str]], temperature: float = 0.5) -> str:
-    """Send a chat completion request to MiniMax M2.7 and return the content string.
-
-    Typical latency 2-10s under normal conditions; 187s only when all retries
-    are exhausted (3 attempts x 60s timeout + 2s + 5s backoff). 4xx errors
-    break immediately without retry.
-    """
-    api_key = os.environ.get("MINIMAX_API_KEY", "").strip()
-    if not api_key:
-        raise RuntimeError("MINIMAX_API_KEY environment variable is not set")
-    base_url = os.environ.get("MINIMAX_BASE_URL", DEFAULT_BASE_URL).strip()
-    model = os.environ.get("MINIMAX_MODEL", DEFAULT_MODEL).strip()
+def _call_llm(messages: list[dict[str, str]], temperature: float = 0.5) -> str:
+    config = resolve_llm_config()
     payload = json.dumps({
-        "model": model,
+        "model": config.model,
         "messages": messages,
         "temperature": temperature,
     }).encode("utf-8")
     last_error: Exception | None = None
-    for attempt in range(M27_RETRIES):
+    for attempt in range(LLM_RETRIES):
         try:
             req = urllib_request.Request(
-                base_url,
+                config.base_url,
                 data=payload,
                 headers={
                     "Content-Type": "application/json",
-                    "Authorization": f"Bearer {api_key}",
+                    "Authorization": f"Bearer {config.api_key}",
                     "User-Agent": USER_AGENT,
                 },
                 method="POST",
             )
-            with urllib_request.urlopen(req, timeout=M27_TIMEOUT) as response:
+            with urllib_request.urlopen(req, timeout=LLM_TIMEOUT) as response:
                 result = json.loads(response.read().decode("utf-8"))
             choices = result.get("choices") if isinstance(result, dict) else None
             if not choices or not isinstance(choices, list):
-                raise ValueError("M2.7 response missing choices")
+                raise ValueError("LLM response missing choices")
             message = choices[0].get("message", {}) if isinstance(choices[0], dict) else {}
             content = str(message.get("content") or "").strip()
-            content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL).strip()
+            content = re.sub(
+                r"<think>.*?</think>",
+                "",
+                content,
+                flags=re.DOTALL,
+            ).strip()
             if content:
                 return content
-            raise ValueError("M2.7 response has empty content")
+            raise ValueError("LLM response has empty content")
         except urllib_error.HTTPError as exc:
             last_error = exc
             if 400 <= exc.code <= 499:
                 break
-            if attempt < M27_RETRIES - 1 and attempt < len(_RETRY_BACKOFFS):
+            if attempt < LLM_RETRIES - 1 and attempt < len(_RETRY_BACKOFFS):
                 time.sleep(_RETRY_BACKOFFS[attempt])
             continue
         except (urllib_error.URLError, OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
             last_error = exc
-            if attempt < M27_RETRIES - 1 and attempt < len(_RETRY_BACKOFFS):
+            if attempt < LLM_RETRIES - 1 and attempt < len(_RETRY_BACKOFFS):
                 time.sleep(_RETRY_BACKOFFS[attempt])
             continue
-    raise last_error or RuntimeError("M2.7 call failed after retries")
+    raise last_error or RuntimeError("LLM call failed after retries")
 
 
 def _parse_result(content: str) -> dict[str, object]:
@@ -185,12 +158,12 @@ def _parse_result(content: str) -> dict[str, object]:
         cleaned = cleaned[brace_start:brace_end + 1]
     parsed = json.loads(cleaned)
     if not isinstance(parsed, dict):
-        raise ValueError("M2.7 response is not a JSON object")
+        raise ValueError("LLM response is not a JSON object")
 
     summary_raw = parsed.get("summary")
     body_raw = parsed.get("body")
     if not isinstance(summary_raw, str) or not isinstance(body_raw, str):
-        raise ValueError("M2.7 response has non-string summary or body")
+        raise ValueError("LLM response has non-string summary or body")
 
     def _str_list(value: object) -> list[str]:
         if not isinstance(value, list):
@@ -214,7 +187,7 @@ def _parse_result(content: str) -> dict[str, object]:
 def _fallback(sources: list[dict[str, str]], title: str, reason: str = "") -> dict[str, object]:
     if reason:
         display_title = title or "<untitled>"
-        print(f"Warning: M2.7 call failed for '{display_title}' ({reason}). Using degraded fallback result.", file=sys.stderr)
+        print(f"Warning: LLM call failed for '{display_title}' ({reason}). Using degraded fallback result.", file=sys.stderr)
     first = sources[0] if sources else {}
     first_title = str(first.get("title", "")).strip() or title
     first_body = str(first.get("body", "")).strip()
@@ -227,23 +200,12 @@ def _fallback(sources: list[dict[str, str]], title: str, reason: str = "") -> di
     }
 
 
-def m27_crystallize(
+def llm_crystallize(
     sources: list[dict[str, str]],
     kind: str,
     title: str,
     raise_on_failure: bool = False,
 ) -> dict[str, object]:
-    """Generate structured content for a crystallize page.
-
-    Args:
-        sources: list of dicts with "title" and "body" keys.
-        kind: page type — concept, decision, synthesis, or query.
-        title: target page title.
-        raise_on_failure: if True, propagate exceptions instead of returning fallback.
-
-    Returns:
-        dict with summary, key_points, body, findings, tensions.
-    """
     if not sources:
         result = dict(_EMPTY_RESULT)
         result["summary"] = title
@@ -260,7 +222,7 @@ def m27_crystallize(
         {"role": "user", "content": user_content},
     ]
     try:
-        content = _call_m27(messages, temperature=_resolve_temperature(kind))
+        content = _call_llm(messages, temperature=resolve_llm_temperature(kind, _TEMPERATURE_BY_KIND))
         return _parse_result(content)
     except Exception as exc:
         if raise_on_failure:
@@ -268,28 +230,16 @@ def m27_crystallize(
         return _fallback(sources, title, reason=str(exc))
 
 
-def m27_digest(
+def llm_digest(
     sources: list[dict[str, str]],
     title: str,
     raise_on_failure: bool = False,
 ) -> dict[str, object]:
-    """Generate structured content for a digest synthesis page.
-
-    Args:
-        sources: list of dicts with "title" and "body" keys.
-        title: target page title.
-        raise_on_failure: if True, propagate exceptions instead of returning fallback.
-
-    Returns:
-        dict with summary, key_points, body, findings, tensions.
-    """
     if not sources:
         result = dict(_EMPTY_RESULT)
         result["summary"] = title
         return result
 
-    # digest is semantically a subset of synthesis; reusing the same template
-    # reduces prompt maintenance. Split if digest needs significantly different instructions.
     template = _PROMPT_TEMPLATES["synthesis"]
     user_content = (
         template.format(title=title, page_kind="synthesis digest page")
@@ -301,7 +251,7 @@ def m27_digest(
         {"role": "user", "content": user_content},
     ]
     try:
-        content = _call_m27(messages, temperature=_resolve_temperature("synthesis"))
+        content = _call_llm(messages, temperature=resolve_llm_temperature("synthesis", _TEMPERATURE_BY_KIND))
         return _parse_result(content)
     except Exception as exc:
         if raise_on_failure:

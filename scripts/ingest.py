@@ -28,6 +28,8 @@ from urllib import error as urllib_error
 from urllib import request as urllib_request
 from urllib.parse import urljoin, urlparse
 
+from url_safety import safe_urlopen, validate_fetch_url
+
 import rebuild_index
 from bs4 import BeautifulSoup
 from markdownify import markdownify as md
@@ -458,6 +460,10 @@ def convert_with_markitdown(source_path: Path) -> str:
 
 
 def fetch_raw_html(url: str, timeout: int = 30) -> str:
+    try:
+        validate_fetch_url(url)
+    except ValueError:
+        return ""
     request = urllib_request.Request(
         url,
         headers={
@@ -466,7 +472,7 @@ def fetch_raw_html(url: str, timeout: int = 30) -> str:
         },
     )
     try:
-        with urllib_request.urlopen(request, timeout=timeout) as response:
+        with safe_urlopen(request, timeout=timeout) as response:
             raw_bytes = response.read()
             content_encoding = (response.headers.get("Content-Encoding") or "").lower()
             if "gzip" in content_encoding:

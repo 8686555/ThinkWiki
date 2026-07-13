@@ -169,14 +169,36 @@ openclaw browser --browser-profile openclaw open http://127.0.0.1:8765/index.htm
 
 ## 环境变量
 
-ThinkWiki 的部分功能需要 API key：
+远程 AI 功能**默认全部关闭**，按需配置即可。
+
+### 内容生成（`crystallize`、`digest`）
+
+需要**同时设置以下三个变量**。支持任意 OpenAI 兼容的 chat completions 服务（MiniMax、OpenAI、DeepSeek、本地 Ollama 等）。
 
 | 变量 | 必需 | 用途 |
 |------|------|------|
-| `MINIMAX_API_KEY` | 否（可选） | MiniMax M2.7 内容生成；未设置则回退到启发式算法 |
-| `SILICONFLOW_API_KEY` | 否（可选） | SiliconFlow 免费 BGE-M3 embedding，用于实体归并去重；不设置则退化为纯字符串匹配 |
+| `THINKWIKI_LLM_API_KEY` | 启用时必需 | LLM 服务商 API key |
+| `THINKWIKI_LLM_BASE_URL` | 启用时必需 | Chat completions 地址，如 `https://api.openai.com/v1/chat/completions` |
+| `THINKWIKI_LLM_MODEL` | 启用时必需 | 模型名，如 `gpt-4o-mini` 或 `MiniMax-M3` |
+| `THINKWIKI_LLM_TEMPERATURE` | 否 | 可选温度覆盖 |
 
-`MINIMAX_API_KEY` 未设置时 `crystallize` 和 `digest` 会优雅回退到启发式算法。`SILICONFLOW_API_KEY` 可在 https://siliconflow.cn 免费注册获取。
+未完整配置 LLM 时，`crystallize` 和 `digest` 仅使用本地启发式算法。
+
+### 实体嵌入（`entity-merge-review`、`graph-report`、`health`）
+
+设置 `THINKWIKI_EMBED_API_KEY` 后启用。默认使用硅基流动 BGE-M3，可自行覆盖 endpoint 和模型。
+
+| 变量 | 必需 | 用途 |
+|------|------|------|
+| `THINKWIKI_EMBED_API_KEY` | 启用时必需 | Embedding 服务商 API key |
+| `THINKWIKI_EMBED_BASE_URL` | 否 | Embedding 地址，逗号分隔多个；默认 `https://api.siliconflow.cn/v1/embeddings` |
+| `THINKWIKI_EMBED_MODEL` | 否 | Embedding 模型；默认 `BAAI/bge-m3` |
+
+如需默认嵌入方案，可在 https://siliconflow.cn 免费注册 key。
+
+### 旧变量名（v1.7.2 起已弃用）
+
+`MINIMAX_API_KEY`、`MINIMAX_BASE_URL`、`MINIMAX_MODEL`、`MINIMAX_TEMPERATURE`、`SILICONFLOW_API_KEY`、`BGE_ENDPOINTS` 仍可使用但会打印弃用警告，请迁移到上述 `THINKWIKI_*` 变量。
 
 ## 手动安装（可选）
 

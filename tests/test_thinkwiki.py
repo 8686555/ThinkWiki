@@ -18,6 +18,9 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+SCRIPTS_DIR = REPO_ROOT / "scripts"
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
 
 
 def runtime_python() -> str:
@@ -100,6 +103,18 @@ def serve_handler(handler_class: type[http.server.BaseHTTPRequestHandler]):
 
 
 class ThinkWikiRegressionTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._previous_allow_private = os.environ.get("THINKWIKI_ALLOW_PRIVATE_URL_FETCH")
+        os.environ["THINKWIKI_ALLOW_PRIVATE_URL_FETCH"] = "1"
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        if cls._previous_allow_private is None:
+            os.environ.pop("THINKWIKI_ALLOW_PRIVATE_URL_FETCH", None)
+        else:
+            os.environ["THINKWIKI_ALLOW_PRIVATE_URL_FETCH"] = cls._previous_allow_private
+
     def test_batch_clip_dry_run_lists_supported_directory_sources(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir) / "wiki"
@@ -2258,6 +2273,121 @@ class ThinkWikiRegressionTest(unittest.TestCase):
             self.assertIn("Browse via HTTP:", result.stdout)
             self.assertIn("python scripts/thinkwiki serve --root", result.stdout)
             self.assertIn("http://127.0.0.1:8765/index.html", result.stdout)
+
+
+class ThinkWikiSecurityTest(unittest.TestCase):
+    def test_llm_and_embed_disabled_without_configuration(self) -> None:
+        import importlib
+
+        import ai_config
+
+        ai_keys = [
+            key
+            for key in os.environ
+            if key.startswith(("THINKWIKI_", "MINIMAX_", "SILICONFLOW_", "BGE_"))
+        ]
+        preserved = {key: os.environ[key] for key in ai_keys}
+        try:
+            for key in ai_keys:
+                del os.environ[key]
+            importlib.reload(ai_config)
+            self.assertFalse(ai_config.llm_is_configured())
+            self.assertFalse(ai_config.embed_is_configured())
+        finally:
+            for key in ai_keys:
+                os.environ.pop(key, None)
+            os.environ.update(preserved)
+            importlib.reload(ai_config)
+
+    def test_llm_requires_complete_configuration(self) -> None:
+        import importlib
+
+        import ai_config
+
+        ai_keys = [
+            key
+            for key in os.environ
+            if key.startswith(("THINKWIKI_", "MINIMAX_", "SILICONFLOW_", "BGE_"))
+        ]
+        preserved = {key: os.environ[key] for key in ai_keys}
+        try:
+            for key in ai_keys:
+                del os.environ[key]
+            importlib.reload(ai_config)
+            os.environ["THINKWIKI_LLM_API_KEY"] = "test-key"
+            os.environ["THINKWIKI_LLM_BASE_URL"] = "https://api.example.com/v1/chat/completions"
+            os.environ["THINKWIKI_LLM_MODEL"] = "demo-model"
+            importlib.reload(ai_config)
+            self.assertTrue(ai_config.llm_is_configured())
+            config = ai_config.resolve_llm_config()
+            self.assertEqual(config.model, "demo-model")
+        finally:
+            for key in ai_keys:
+                os.environ.pop(key, None)
+            os.environ.update(preserved)
+            importlib.reload(ai_config)
+
+    def test_embed_defaults_to_siliconflow_when_only_key_is_set(self) -> None:
+        import importlib
+
+        import ai_config
+
+        ai_keys = [
+            key
+            for key in os.environ
+            if key.startswith(("THINKWIKI_", "MINIMAX_", "SILICONFLOW_", "BGE_"))
+        ]
+        preserved = {key: os.environ[key] for key in ai_keys}
+        try:
+            for key in ai_keys:
+                del os.environ[key]
+            importlib.reload(ai_config)
+            os.environ["THINKWIKI_EMBED_API_KEY"] = "test-key"
+            importlib.reload(ai_config)
+            self.assertTrue(ai_config.embed_is_configured())
+            config = ai_config.resolve_embed_config()
+            self.assertEqual(config.base_urls, (ai_config.DEFAULT_EMBED_BASE_URL,))
+            self.assertEqual(config.model, ai_config.DEFAULT_EMBED_MODEL)
+        finally:
+            for key in ai_keys:
+                os.environ.pop(key, None)
+            os.environ.update(preserved)
+            importlib.reload(ai_config)
+
+    def test_url_safety_blocks_loopback_fetch(self) -> None:
+        from url_safety import validate_fetch_url
+
+        with self.assertRaises(ValueError):
+            validate_fetch_url("http://127.0.0.1/metadata")
+
+    def test_url_safety_blocks_private_network_fetch(self) -> None:
+        from url_safety import validate_fetch_url
+
+        with self.assertRaises(ValueError):
+            validate_fetch_url("http://192.168.1.10/internal")
+
+    def test_serve_refuses_non_loopback_without_allow_lan(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir) / "wiki"
+            write_text(root / ".wiki-schema.md", "# marker")
+            write_text(root / "output" / "index.html", "<html><body>ThinkWiki Outputs</body></html>")
+
+            result = subprocess.run(
+                [
+                    runtime_python(),
+                    str(REPO_ROOT / "scripts" / "serve_outputs.py"),
+                    "--root",
+                    str(root),
+                    "--host",
+                    "0.0.0.0",
+                    "--print-urls",
+                ],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("--allow-lan", result.stderr)
 
 
 if __name__ == "__main__":

@@ -53,6 +53,10 @@ ROOT_REQUIRED_SCRIPTS = [
     "scripts/runtime_capabilities.py",
     "scripts/workspace_status.py",
     "scripts/utils.py",
+    "scripts/ai_config.py",
+    "scripts/llm_client.py",
+    "scripts/embed_client.py",
+    "scripts/url_safety.py",
 ]
 ROOT_REQUIRED_TEMPLATES = [
     "templates/root/.wiki-schema.md",

@@ -43,14 +43,32 @@ ThinkWiki is a single public skill for working with a local Markdown knowledge b
 
 ## Required Environment Variables
 
-ThinkWiki needs these variables for AI-powered features:
+Remote AI features are **disabled by default**. Configure only what you need.
+
+### Content generation (`crystallize`, `digest`)
+
+Requires all three variables. Any OpenAI-compatible chat completion endpoint works.
 
 | Variable | Required | Used By | Notes |
 |----------|----------|---------|-------|
-| `MINIMAX_API_KEY` | No (optional) | `m27_client.py` | MiniMax M2.7 API key for content generation; falls back to heuristics if unset |
-| `SILICONFLOW_API_KEY` | No (optional) | `bge_client.py` | SiliconFlow free BGE-M3 embedding API (`BAAI/bge-m3`); entity merge falls back to string-only matching if unset or unreachable |
+| `THINKWIKI_LLM_API_KEY` | Yes, to enable | `llm_client.py` | API key for the configured LLM provider |
+| `THINKWIKI_LLM_BASE_URL` | Yes, to enable | `llm_client.py` | Chat completions URL |
+| `THINKWIKI_LLM_MODEL` | Yes, to enable | `llm_client.py` | Model name |
+| `THINKWIKI_LLM_TEMPERATURE` | No | `llm_client.py` | Optional temperature override |
 
-Without `MINIMAX_API_KEY`, `crystallize` and `digest` will fall back to heuristics. `SILICONFLOW_API_KEY` is optional — register at https://siliconflow.cn to get a free key, entity merge degrades gracefully without it.
+Without a complete LLM configuration, `crystallize` and `digest` use local heuristics only.
+
+### Entity embedding (`entity-merge-review`, `graph-report`, `health`)
+
+Enabled when `THINKWIKI_EMBED_API_KEY` is set. Defaults to SiliconFlow BGE-M3.
+
+| Variable | Required | Used By | Notes |
+|----------|----------|---------|-------|
+| `THINKWIKI_EMBED_API_KEY` | Yes, to enable | `embed_client.py` | API key for the embedding provider |
+| `THINKWIKI_EMBED_BASE_URL` | No | `embed_client.py` | Default `https://api.siliconflow.cn/v1/embeddings` |
+| `THINKWIKI_EMBED_MODEL` | No | `embed_client.py` | Default `BAAI/bge-m3` |
+
+Legacy names (`MINIMAX_*`, `SILICONFLOW_API_KEY`, `BGE_ENDPOINTS`) still work with a deprecation warning.
 
 ## Root Resolution
 

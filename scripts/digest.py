@@ -19,7 +19,8 @@ import sys
 from pathlib import Path
 
 from crystallize import first_meaningful_line, write_page
-from m27_client import m27_digest
+from ai_config import llm_is_configured, resolve_llm_config
+from llm_client import llm_digest
 from utils import file_uri, find_repo_root, normalize_repo_path, parse_frontmatter, read_text, refresh_output_home_if_present
 
 def ordered_unique(items: list[str]) -> list[str]:
@@ -688,14 +689,23 @@ def main() -> int:
     auto_related_paths = ordered_unique([item for record in records for item in list(record["related_paths"])])
 
     source_data_list = [record["source_data"] for record in records]
-    try:
-        m27_result = m27_digest(source_data_list, args.title, raise_on_failure=True)
-    except Exception:
-        print("Warning: M2.7 failed, falling back to heuristic mode.", file=sys.stderr)
-        m27_result = _fallback_digest(root, args.source_path, args.title, args.content)
+    if llm_is_configured():
+        llm_config = resolve_llm_config()
+        print(
+            f"Notice: sending source content to configured LLM at {llm_config.base_url} "
+            f"(model: {llm_config.model}).",
+            file=sys.stderr,
+        )
+        try:
+            llm_result = llm_digest(source_data_list, args.title, raise_on_failure=True)
+        except Exception:
+            print("Warning: LLM failed, falling back to heuristic mode.", file=sys.stderr)
+            llm_result = _fallback_digest(root, args.source_path, args.title, args.content)
+    else:
+        llm_result = _fallback_digest(root, args.source_path, args.title, args.content)
 
-    summary = args.summary.strip() or str(m27_result["summary"])
-    content = args.content.strip() or str(m27_result["body"])
+    summary = args.summary.strip() or str(llm_result["summary"])
+    content = args.content.strip() or str(llm_result["body"])
     page_path, action = write_page(
         root=root,
         kind="synthesis",
@@ -705,8 +715,8 @@ def main() -> int:
         source_paths=ordered_unique(args.source_path + auto_source_paths) or ["index.md"],
         related_paths=ordered_unique(args.related_path + auto_related_paths),
         follow_ups=[],
-        findings=ordered_unique(args.finding + list(m27_result["findings"])),
-        tensions=ordered_unique(args.tension + list(m27_result["tensions"])),
+        findings=ordered_unique(args.finding + list(llm_result["findings"])),
+        tensions=ordered_unique(args.tension + list(llm_result["tensions"])),
         key_points=[],
         action_label="digest",
         slug=args.slug,

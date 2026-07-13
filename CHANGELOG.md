@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.7.2
+### Security
+- Added SSRF protections for user-supplied URL fetches in `ingest.py` and `clip.py` via `url_safety.py` (scheme allowlist, private/metadata IP blocking, redirect validation). Set `THINKWIKI_ALLOW_PRIVATE_URL_FETCH=1` only for local testing if you intentionally need loopback fetches.
+- `serve` now refuses non-loopback `--host` values unless `--allow-lan` is passed explicitly.
+- Upgraded `cryptography` from `48.0.0` to `48.0.1` (GHSA-537c-gmf6-5ccf).
+
+### Changed
+- Replaced MiniMax-specific `m27_client.py` with provider-neutral `llm_client.py` using OpenAI-compatible chat completions. LLM features stay disabled unless `THINKWIKI_LLM_API_KEY`, `THINKWIKI_LLM_BASE_URL`, and `THINKWIKI_LLM_MODEL` are all set.
+- Replaced `bge_client.py` with `embed_client.py` and unified env vars: `THINKWIKI_EMBED_API_KEY` (required to enable), `THINKWIKI_EMBED_BASE_URL` (defaults to SiliconFlow), `THINKWIKI_EMBED_MODEL` (defaults to `BAAI/bge-m3`).
+- Added `ai_config.py` as the single source of truth for optional remote AI configuration.
+- `crystallize`, `digest`, and entity merge now print explicit notices before sending content to configured remote APIs.
+- Deprecated legacy env vars (`MINIMAX_*`, `SILICONFLOW_API_KEY`, `BGE_ENDPOINTS`) with stderr warnings; they remain supported for one release cycle.
+
 ## v1.7.1
 ### Security
 - **Removed unauthorized hardcoded BGE embedding endpoints and default API key from `bge_client.py`.** v1.7.0 had shipped with private HTTP endpoints and a baked-in shared key that did not match the documented `SILICONFLOW_API_KEY` flow. Embedding now uses SiliconFlow (`https://api.siliconflow.cn/v1/embeddings`) and requires an explicit `SILICONFLOW_API_KEY`; there is no default key and no silent third-party fallback.

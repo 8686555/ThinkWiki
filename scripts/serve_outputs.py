@@ -71,11 +71,30 @@ def main() -> int:
         help="Print the HTTP URLs that this command would expose, then exit without starting a server",
     )
     parser.add_argument(
+        "--allow-lan",
+        action="store_true",
+        help="Allow binding to non-loopback hosts such as 0.0.0.0",
+    )
+    parser.add_argument(
         "--verbose",
         action="store_true",
         help="Log each HTTP request to stderr",
     )
     args = parser.parse_args()
+
+    loopback_hosts = {"127.0.0.1", "localhost", "::1"}
+    if args.host not in loopback_hosts and not args.allow_lan:
+        print(
+            f"Refusing to bind to non-loopback host {args.host!r} without --allow-lan.",
+            file=sys.stderr,
+        )
+        return 1
+    if args.host not in loopback_hosts:
+        print(
+            f"Warning: serving ThinkWiki outputs on {args.host}:{args.port or DEFAULT_SERVE_PORT} "
+            "may expose wiki HTML to your local network.",
+            file=sys.stderr,
+        )
 
     root = find_repo_root(Path(args.root))
     output_dir = root / "output"
