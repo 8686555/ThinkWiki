@@ -196,10 +196,6 @@ Enabled when `THINKWIKI_EMBED_API_KEY` is set. Defaults to SiliconFlow BGE-M3; o
 
 Register a free SiliconFlow key at https://siliconflow.cn if you want the default embedding setup.
 
-### Legacy names (deprecated in v1.7.2)
-
-`MINIMAX_API_KEY`, `MINIMAX_BASE_URL`, `MINIMAX_MODEL`, `MINIMAX_TEMPERATURE`, `SILICONFLOW_API_KEY`, and `BGE_ENDPOINTS` still work with a deprecation warning. Migrate to the `THINKWIKI_*` names above.
-
 ## Manual Install (Optional)
 
 If you prefer to set up the skill yourself instead of asking an agent:

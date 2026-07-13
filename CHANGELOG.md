@@ -11,7 +11,7 @@
 - Replaced `bge_client.py` with `embed_client.py` and unified env vars: `THINKWIKI_EMBED_API_KEY` (required to enable), `THINKWIKI_EMBED_BASE_URL` (defaults to SiliconFlow), `THINKWIKI_EMBED_MODEL` (defaults to `BAAI/bge-m3`).
 - Added `ai_config.py` as the single source of truth for optional remote AI configuration.
 - `crystallize`, `digest`, and entity merge now print explicit notices before sending content to configured remote APIs.
-- Deprecated legacy env vars (`MINIMAX_*`, `SILICONFLOW_API_KEY`, `BGE_ENDPOINTS`) with stderr warnings; they remain supported for one release cycle.
+- Removed legacy env vars (`MINIMAX_*`, `SILICONFLOW_API_KEY`, `BGE_ENDPOINTS`); only `THINKWIKI_LLM_*` and `THINKWIKI_EMBED_*` are supported.
 
 ## v1.7.1
 ### Security

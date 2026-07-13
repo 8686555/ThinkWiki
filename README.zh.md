@@ -196,10 +196,6 @@ openclaw browser --browser-profile openclaw open http://127.0.0.1:8765/index.htm
 
 如需默认嵌入方案，可在 https://siliconflow.cn 免费注册 key。
 
-### 旧变量名（v1.7.2 起已弃用）
-
-`MINIMAX_API_KEY`、`MINIMAX_BASE_URL`、`MINIMAX_MODEL`、`MINIMAX_TEMPERATURE`、`SILICONFLOW_API_KEY`、`BGE_ENDPOINTS` 仍可使用但会打印弃用警告，请迁移到上述 `THINKWIKI_*` 变量。
-
 ## 手动安装（可选）
 
 如果你希望自己安装，而不是让 Agent 代劳：

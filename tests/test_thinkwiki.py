@@ -2354,6 +2354,33 @@ class ThinkWikiSecurityTest(unittest.TestCase):
             os.environ.update(preserved)
             importlib.reload(ai_config)
 
+    def test_legacy_env_vars_are_ignored(self) -> None:
+        import importlib
+
+        import ai_config
+
+        ai_keys = [
+            key
+            for key in os.environ
+            if key.startswith(("THINKWIKI_", "MINIMAX_", "SILICONFLOW_", "BGE_"))
+        ]
+        preserved = {key: os.environ[key] for key in ai_keys}
+        try:
+            for key in ai_keys:
+                del os.environ[key]
+            os.environ["MINIMAX_API_KEY"] = "legacy-key"
+            os.environ["MINIMAX_BASE_URL"] = "https://api.example.com/v1/chat/completions"
+            os.environ["MINIMAX_MODEL"] = "legacy-model"
+            os.environ["SILICONFLOW_API_KEY"] = "legacy-embed-key"
+            importlib.reload(ai_config)
+            self.assertFalse(ai_config.llm_is_configured())
+            self.assertFalse(ai_config.embed_is_configured())
+        finally:
+            for key in ai_keys:
+                os.environ.pop(key, None)
+            os.environ.update(preserved)
+            importlib.reload(ai_config)
+
     def test_url_safety_blocks_loopback_fetch(self) -> None:
         from url_safety import validate_fetch_url
 

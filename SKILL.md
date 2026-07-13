@@ -68,8 +68,6 @@ Enabled when `THINKWIKI_EMBED_API_KEY` is set. Defaults to SiliconFlow BGE-M3.
 | `THINKWIKI_EMBED_BASE_URL` | No | `embed_client.py` | Default `https://api.siliconflow.cn/v1/embeddings` |
 | `THINKWIKI_EMBED_MODEL` | No | `embed_client.py` | Default `BAAI/bge-m3` |
 
-Legacy names (`MINIMAX_*`, `SILICONFLOW_API_KEY`, `BGE_ENDPOINTS`) still work with a deprecation warning.
-
 ## Root Resolution
 
 - If the user provides a wiki path, use it directly.
